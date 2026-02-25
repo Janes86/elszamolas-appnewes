@@ -690,22 +690,7 @@ function addApartment() {
   selectApt(apt.id);
 }
 
-function addApartment() {
-  const name = document.getElementById('newAptName').value.trim();
-  const owner = document.getElementById('newAptOwner').value.trim();
-  if (!name && !owner) return;
-  const apt = {
-    id: Date.now().toString(),
-    name: name || owner,
-    owner: owner,
-    units: modalApts.filter(a => a.trim())
-  };
-  apartments.push(apt);
-  saveState('apartments', apartments);
-  hideAddModal();
-  renderSidebar();
-  selectApt(apt.id);
-}
+// (duplicate removed)
 
 // ─── MAIN CONTENT ─────────────────────────────────────────────────────────────
 function renderMain() {
