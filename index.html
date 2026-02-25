@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apartmanok elszámolásai</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #c8a96e;
+    --accent2: #7eb8a4;
+    --text: #e8e4dc;
+    --text2: #8a8580;
+    --danger: #c97070;
+    --success: #7eb8a4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+
+  header span {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text2);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: calc(100vh - 73px);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    background: var(--surface);
+  }
+
+  .sidebar-section {
+    padding: 0 20px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text2);
+    padding: 16px 20px 8px;
+    display: block;
+  }
+
+  .apt-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 0;
+    transition: background 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .apt-item:hover { background: var(--surface2); }
+
+  .apt-item.active {
+    background: var(--surface2);
+    border-left-color: var(--accent);
+  }
+
+  .apt-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text2);
+    flex-shrink: 0;
+  }
+
+  .apt-item.active .apt-dot { background: var(--accent); }
+  .apt-item.has-file .apt-dot { background: var(--success); }
+
+  .apt-name {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .apt-sub {
+    font-size: 11px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .add-apt-btn {
+    margin: 8px 20px;
+    width: calc(100% - 40px);
+    padding: 9px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text2);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+
+  .add-apt-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* MAIN */
+  .main {
+    padding: 40px;
+    max-width: 900px;
+  }
+
+  .page-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .page-sub {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 32px;
+  }
+
+  /* STEPS */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .step-header:hover { background: var(--surface2); }
+
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text2);
+    flex-shrink: 0;
+  }
+
+  .step.done .step-num {
+    background: var(--success);
+    border-color: var(--success);
+    color: var(--bg);
+  }
+
+  .step-title { font-size: 15px; font-weight: 500; }
+  .step-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  .step-body {
+    padding: 0 20px 20px 62px;
+    display: none;
+  }
+
+  .step.open .step-body { display: block; }
+
+  /* UPLOAD ZONE */
+  .upload-zone {
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 28px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(200, 169, 110, 0.04);
+  }
+
+  .upload-zone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .upload-icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-text { font-size: 13px; color: var(--text2); }
+  .upload-text strong { color: var(--accent); }
+
+  .file-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(126, 184, 164, 0.1);
+    border: 1px solid var(--success);
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--success);
+    font-family: 'DM Mono', monospace;
+    margin-top: 12px;
+  }
+
+  /* TEXTAREA */
+  .payout-textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 14px;
+    resize: vertical;
+    min-height: 160px;
+    outline: none;
+    transition: border-color 0.15s;
+    line-height: 1.6;
+  }
+
+  .payout-textarea:focus { border-color: var(--accent); }
+  .payout-textarea::placeholder { color: var(--text2); }
+
+  /* PARSED PREVIEW */
+  .parsed-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 12px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .parsed-table th {
+    text-align: left;
+    color: var(--text2);
+    font-weight: 400;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+
+  .parsed-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .parsed-table tr:last-child td { border-bottom: none; }
+
+  .parsed-table td.num { color: var(--accent); }
+  .parsed-table td.eur { color: var(--accent2); }
+
+  /* MONTH SELECT */
+  .month-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .month-btn {
+    padding: 7px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .month-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .month-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+
+  /* EXTRA COSTS */
+  .extra-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+
+  .input-field {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .input-field:focus { border-color: var(--accent); }
+  .input-field::placeholder { color: var(--text2); }
+  .input-field.wide { flex: 1; }
+
+  .remove-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .remove-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+  .add-extra-btn {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text2);
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s;
+    margin-top: 4px;
+  }
+
+  .add-extra-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  /* GENERATE BTN */
+  .generate-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+    margin-top: 8px;
+  }
+
+  .generate-btn:hover { background: #d4b87e; transform: translateY(-1px); }
+  .generate-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* STATUS */
+  .status-bar {
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  .status-bar.info { background: rgba(126, 184, 164, 0.1); border: 1px solid var(--success); color: var(--success); }
+  .status-bar.error { background: rgba(201, 112, 112, 0.1); border: 1px solid var(--danger); color: var(--danger); }
+  .status-bar.show { display: block; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.show { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px;
+    width: 360px;
+    max-width: 90vw;
+  }
+
+  .modal h3 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: var(--accent);
+  }
+
+  .modal-btns {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    justify-content: flex-end;
+  }
+
+  .btn-primary {
+    padding: 9px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-primary:hover { background: #d4b87e; }
+
+  .btn-ghost {
+    padding: 9px 20px;
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-ghost:hover { border-color: var(--text2); color: var(--text); }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 80px 40px;
+    color: var(--text2);
+  }
+
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-state h2 { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--text); margin-bottom: 8px; }
+  .empty-state p { font-size: 14px; line-height: 1.6; max-width: 320px; margin: 0 auto; }
+
+  label.field-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+
+  .parse-btn {
+    margin-top: 10px;
+    padding: 8px 18px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .parse-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  .warning-note {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 6px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Apartmanok elszámolásai</h1>
+  <span>Havi Booking / Airbnb feldolgozó</span>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <span class="sidebar-label">Lakások excel táblázatai</span>
+    <div id="aptList"></div>
+    <div class="sidebar-section">
+      <button class="add-apt-btn" onclick="showAddModal()">+ Excel feltöltése</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="mainContent">
+    <div class="empty-state">
+      <div class="icon">🏠</div>
+      <h2>Válassz táblázatot</h2>
+      <p>Adj hozzá lakás excel táblázatokat a bal oldali panelen, majd töltsd fel a sablont és a Booking/Airbnb adatokat.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ADD APARTMENT MODAL -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal" style="width:440px">
+    <h3>Excel feltöltése</h3>
+    <div class="upload-zone" id="modalExcelZone" style="margin-bottom:16px">
+      <input type="file" accept=".xlsx,.xls" onchange="handleModalExcelUpload(event)" />
+      <div class="upload-icon">📊</div>
+      <div class="upload-text">Húzd ide vagy <strong>kattints a feltöltéshez</strong></div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">.xlsx fájl</div>
+    </div>
+    <div id="modalFileBadge" style="display:none;margin-bottom:12px"></div>
+    <label class="field-label">Tulajdonos neve</label>
+    <input class="input-field" style="width:100%" id="newAptOwner" placeholder="pl. Kiss János" />
+    <label class="field-label">Megjegyzés (opcionális)</label>
+    <input class="input-field" style="width:100%" id="newAptNotes" placeholder="pl. Asbóth, Mária, Somogyi" />
+    <div class="modal-btns">
+      <button class="btn-ghost" onclick="hideAddModal()">Mégse</button>
+      <button class="btn-primary" onclick="addApartment()">Hozzáadás</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+function saveState(key, val) {
+  try { sessionStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+}
+function loadState(key, def) {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) : def; } catch(e) { return def; }
+}
+
+let apartments = loadState('apartments', []);
+let selectedApt = null;
+let excelFiles = loadState('excelFiles', {});
+let currentParsed = [];
+let extraCosts = [];
+
+const MONTHS_HU = ['Január','Február','Március','Április','Május','Június','Július','Augusztus','Szeptember','Október','November','December'];
+const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ─── SIDEBAR ─────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  const list = document.getElementById('aptList');
+  if (apartments.length === 0) {
+    list.innerHTML = '<div style="padding:10px 20px;font-size:12px;color:var(--text2)">Még nincs lakás</div>';
+    return;
+  }
+  list.innerHTML = apartments.map(apt => `
+    <div class="apt-item ${selectedApt?.id === apt.id ? 'active' : ''} ${excelFiles[apt.id] ? 'has-file' : ''}" 
+         onclick="selectApt('${apt.id}')">
+      <div class="apt-dot"></div>
+      <div>
+        <div class="apt-name">${apt.owner || apt.name}</div>
+        <div class="apt-sub">${apt.notes || apt.name}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectApt(id) {
+  selectedApt = apartments.find(a => a.id === id);
+  extraCosts = [];
+  currentParsed = [];
+  renderSidebar();
+  renderMain();
+}
+
+// ─── MODAL ───────────────────────────────────────────────────────────────────
+let modalExcelFile = null;
+
+function showAddModal() {
+  modalExcelFile = null;
+  document.getElementById('addModal').classList.add('show');
+  document.getElementById('newAptOwner').value = '';
+  document.getElementById('newAptNotes').value = '';
+  document.getElementById('modalFileBadge').style.display = 'none';
+  document.getElementById('modalExcelZone').style.display = 'block';
+  setTimeout(() => document.getElementById('newAptOwner').focus(), 100);
+}
+
+function hideAddModal() {
+  document.getElementById('addModal').classList.remove('show');
+  modalExcelFile = null;
+}
+
+function handleModalExcelUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    modalExcelFile = { data: ev.target.result, name: file.name };
+    document.getElementById('modalFileBadge').style.display = 'block';
+    document.getElementById('modalFileBadge').innerHTML = `<div class="file-badge">✓ ${file.name}</div>`;
+  };
+  reader.readAsDataURL(file);
+}
+
+function addApartment() {
+  const owner = document.getElementById('newAptOwner').value.trim();
+  const notes = document.getElementById('newAptNotes').value.trim();
+  if (!modalExcelFile && !owner) return;
+
+  const apt = {
+    id: Date.now().toString(),
+    name: modalExcelFile ? modalExcelFile.name.replace(/\.[^.]+$/, '') : owner,
+    owner: owner,
+    notes: notes
+  };
+
+  apartments.push(apt);
+  saveState('apartments', apartments);
+
+  if (modalExcelFile) {
+    excelFiles[apt.id] = { data: modalExcelFile.data, name: modalExcelFile.name };
+    saveState('excelFiles', excelFiles);
+  }
+
+  hideAddModal();
+  renderSidebar();
+  selectApt(apt.id);
+}
+
+function addApartment() {
+  const name = document.getElementById('newAptName').value.trim();
+  const owner = document.getElementById('newAptOwner').value.trim();
+  if (!name && !owner) return;
+  const apt = {
+    id: Date.now().toString(),
+    name: name || owner,
+    owner: owner,
+    units: modalApts.filter(a => a.trim())
+  };
+  apartments.push(apt);
+  saveState('apartments', apartments);
+  hideAddModal();
+  renderSidebar();
+  selectApt(apt.id);
+}
+
+// ─── MAIN CONTENT ─────────────────────────────────────────────────────────────
+function renderMain() {
+  if (!selectedApt) return;
+  const hasFile = !!excelFiles[selectedApt.id];
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="page-title">${selectedApt.owner || selectedApt.name}</div>
+    <div class="page-sub">${selectedApt.notes ? selectedApt.notes + ' · ' : ''}Havi elszámolás generáló</div>
+
+    <div class="steps">
+
+      <!-- STEP 1: Excel sablon -->
+      <div class="step ${hasFile ? 'done' : ''} open" id="step1">
+        <div class="step-header" onclick="toggleStep('step1')">
+          <div class="step-num">${hasFile ? '✓' : '1'}</div>
+          <div>
+            <div class="step-title">Excel sablon feltöltése</div>
+            <div class="step-desc">${hasFile ? 'Sablon betöltve — újra feltöltheted ha frissítetted' : 'Töltsd fel az Excel fájlt amely tartalmazza az előző hónapokat'}</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <div class="upload-zone" id="excelZone">
+            <input type="file" accept=".xlsx,.xls" onchange="handleExcelUpload(event)" />
+            <div class="upload-icon">📊</div>
+            <div class="upload-text">Húzd ide vagy <strong>kattints a feltöltéshez</strong></div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">.xlsx fájl</div>
+          </div>
+          ${hasFile ? `<div class="file-badge">✓ ${selectedApt.name}_sablon.xlsx betöltve</div>` : ''}
+        </div>
+      </div>
+
+      <!-- STEP 2: Hónap -->
+      <div class="step open" id="step2">
+        <div class="step-header" onclick="toggleStep('step2')">
+          <div class="step-num">2</div>
+          <div>
+            <div class="step-title">Hónap kiválasztása</div>
+            <div class="step-desc">Melyik hónapra generálod az elszámolást?</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <label class="field-label">Év</label>
+          <input class="input-field" id="yearInput" value="${new Date().getFullYear()}" style="width:100px" type="number" />
+          <label class="field-label">Hónap</label>
+          <div class="month-row" id="monthRow">
+            ${MONTHS_HU.map((m,i) => `
+              <button class="month-btn ${i === new Date().getMonth() ? 'active' : ''}" 
+                      onclick="selectMonth(${i}, this)">${m}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Booking.com payout -->
+      <div class="step open" id="step3">
+        <div class="step-header" onclick="toggleStep('step3')">
+          <div class="step-num">3</div>
+          <div>
+            <div class="step-title">Booking.com payout adatok</div>
+            <div class="step-desc">Másold be a Booking.com payout oldal szövegét</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <label class="field-label">Payout szöveg (copy-paste a Booking.com-ról)</label>
+          <textarea class="payout-textarea" id="payoutText" 
+            placeholder="Feb 5 2026&#10;Jan 29 - Feb 4&#10;0Bltd9f3TZvA4Rya&#10;PDF/CSV&#10;SentHUF 142,715&#10;Booking reference number...&#10;&#10;Másold be a teljes payout szöveget ide..."></textarea>
+          <div class="warning-note">💡 A Booking.com admin → Pénzügyek → Kifizetések oldalról másold ki az adott hónaphoz tartozó összes kifizetést</div>
+          <button class="parse-btn" onclick="parsePayout()">▶ Feldolgozás</button>
+          <div id="parsedPreview"></div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Egyéb kiadások -->
+      <div class="step open" id="step4">
+        <div class="step-header" onclick="toggleStep('step4')">
+          <div class="step-num">4</div>
+          <div>
+            <div class="step-title">Egyéb kiadások (opcionális)</div>
+            <div class="step-desc">Rendkívüli kiadások hozzáadása</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <div id="extraList"></div>
+          <button class="add-extra-btn" onclick="addExtraRow()">+ Kiadás hozzáadása</button>
+        </div>
+      </div>
+
+      <!-- STEP 5: Generálás -->
+      <div class="step open" id="step5">
+        <div class="step-header" onclick="toggleStep('step5')">
+          <div class="step-num">5</div>
+          <div>
+            <div class="step-title">Excel generálása</div>
+            <div class="step-desc">Új havi fül létrehozása és letöltés</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <button class="generate-btn" onclick="generateExcel()" id="genBtn">
+            ⬇ Elszámolás generálása és letöltés
+          </button>
+          <div class="status-bar" id="statusBar"></div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  renderExtraList();
+}
+
+function toggleStep(id) {
+  const step = document.getElementById(id);
+  step.classList.toggle('open');
+}
+
+function selectMonth(idx, btn) {
+  document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function getSelectedMonth() {
+  const btns = document.querySelectorAll('.month-btn');
+  for (let i = 0; i < btns.length; i++) {
+    if (btns[i].classList.contains('active')) return i;
+  }
+  return new Date().getMonth();
+}
+
+// ─── EXCEL UPLOAD ─────────────────────────────────────────────────────────────
+function handleExcelUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    excelFiles[selectedApt.id] = {
+      data: ev.target.result,
+      name: file.name
+    };
+    saveState('excelFiles', excelFiles);
+    renderSidebar();
+    renderMain();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─── PAYOUT PARSER ────────────────────────────────────────────────────────────
+function parsePayout() {
+  const text = document.getElementById('payoutText').value;
+  if (!text.trim()) { showStatus('Kérlek illeszd be a payout szöveget!', 'error'); return; }
+
+  const results = [];
+
+  // Extract HUF payouts with currency conversion rate
+  // Pattern: find blocks with guest name, check-in/out, net EUR, HUF total, rate
+  const rateMatches = [...text.matchAll(/Currency conversion rate\s*([\d.]+)/g)];
+  const netHufMatches = [...text.matchAll(/Net payout\s*HUF\s*([\d,]+)/g)];
+  const guestMatches = [...text.matchAll(/(\d{7,12})\s*Reservation\s*([^\n\t]+?)\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)\s+(\d{4})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)\s+(\d{4})[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)/g)];
+
+  // Also parse HUF sent amounts per payout block  
+  const sentHufMatches = [...text.matchAll(/Sent\s*HUF\s*([\d,]+)/g)];
+
+  if (guestMatches.length === 0) {
+    // Try simpler pattern
+    showStatus('Nem sikerült foglalásokat találni. Ellenőrizd hogy a teljes payout szöveget illesztetted-e be.', 'error');
+    return;
+  }
+
+  for (let i = 0; i < guestMatches.length; i++) {
+    const m = guestMatches[i];
+    const guestName = m[2].trim();
+    const checkInMonth = m[3], checkInDay = m[4], checkInYear = m[5];
+    const checkOutMonth = m[6], checkOutDay = m[7], checkOutYear = m[8];
+    const netEur = parseFloat(m[12].replace(',',''));
+    const rate = rateMatches[i] ? parseFloat(rateMatches[i][1]) : null;
+    const huf = netHufMatches[i] ? parseInt(netHufMatches[i][1].replace(/,/g,'')) : null;
+
+    results.push({
+      guest: guestName,
+      checkIn: `${checkInYear}. ${checkInMonth.toLowerCase()}. ${checkInDay}.`,
+      checkOut: `${checkOutYear}. ${checkOutMonth.toLowerCase()}. ${checkOutDay}.`,
+      eur: netEur,
+      rate: rate,
+      huf: huf
+    });
+  }
+
+  currentParsed = results;
+  renderParsedPreview();
+}
+
+function renderParsedPreview() {
+  const el = document.getElementById('parsedPreview');
+  if (currentParsed.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="margin-top:16px;font-size:11px;color:var(--success);font-family:'DM Mono',monospace;margin-bottom:8px">
+      ✓ ${currentParsed.length} foglalás azonosítva
+    </div>
+    <table class="parsed-table">
+      <thead>
+        <tr>
+          <th>Vendég</th>
+          <th>Check-in</th>
+          <th>Check-out</th>
+          <th>Nettó EUR</th>
+          <th>Árfolyam</th>
+          <th>HUF (számlán)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${currentParsed.map((r, i) => `
+          <tr>
+            <td>${r.guest}</td>
+            <td>${r.checkIn}</td>
+            <td>${r.checkOut}</td>
+            <td class="eur">€ ${r.eur}</td>
+            <td class="num">${r.rate || '<span style="color:var(--danger)">?</span>'}</td>
+            <td class="num">${r.huf ? r.huf.toLocaleString('hu') : '<span style="color:var(--danger)">?</span>'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--text2)">
+      ✎ Az adatokat az Excel generálás előtt módosíthatod a táblázatban
+    </div>
+  `;
+}
+
+// ─── EXTRA COSTS ──────────────────────────────────────────────────────────────
+function addExtraRow() {
+  extraCosts.push({ desc: '', amount: '' });
+  renderExtraList();
+}
+
+function removeExtra(i) {
+  extraCosts.splice(i, 1);
+  renderExtraList();
+}
+
+function renderExtraList() {
+  const el = document.getElementById('extraList');
+  if (!el) return;
+  if (extraCosts.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Nincs egyéb kiadás</div>';
+    return;
+  }
+  el.innerHTML = extraCosts.map((c, i) => `
+    <div class="extra-row">
+      <input class="input-field wide" placeholder="Leírás (pl. törölköző)" 
+             value="${c.desc}" onchange="extraCosts[${i}].desc=this.value" />
+      <input class="input-field" style="width:120px" placeholder="HUF összeg" type="number"
+             value="${c.amount}" onchange="extraCosts[${i}].amount=this.value" />
+      <button class="remove-btn" onclick="removeExtra(${i})">×</button>
+    </div>
+  `).join('');
+}
+
+// ─── EXCEL GENERATION ─────────────────────────────────────────────────────────
+async function generateExcel() {
+  if (!excelFiles[selectedApt.id]) {
+    showStatus('Előbb töltsd fel az Excel sablont (1. lépés)!', 'error'); return;
+  }
+  if (currentParsed.length === 0) {
+    showStatus('Előbb dolgozd fel a Booking.com adatokat (3. lépés)!', 'error'); return;
+  }
+
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generálás folyamatban...';
+  showStatus('Excel feldolgozása...', 'info');
+
+  try {
+    const month = getSelectedMonth();
+    const year = parseInt(document.getElementById('yearInput').value);
+    const monthName = MONTHS_HU[month];
+    const fileData = excelFiles[selectedApt.id];
+
+    // Convert base64 to array buffer
+    const base64 = fileData.data.split(',')[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const workbook = XLSX.read(bytes, { type: 'array', cellStyles: true });
+
+    // Find the most recent sheet to use as template
+    const sheets = workbook.SheetNames;
+    const templateSheet = workbook.Sheets[sheets[sheets.length - 1]];
+
+    // Create new sheet name
+    const newSheetName = `${monthName}i elsz ${year} ${selectedApt.name}`.substring(0, 31);
+
+    // Deep copy the template sheet
+    const newSheet = JSON.parse(JSON.stringify(templateSheet));
+
+    // Get template data to understand structure
+    const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null });
+
+    // Find booking rows and clear them, then fill with new data
+    // Find header row (contains 'Bérlő' or 'Бронировка' or similar)
+    let headerRow = -1;
+    let dataStartRow = -1;
+    let platformCol = -1;
+    let guestCol = -1;
+    let checkInCol = -1;
+    let checkOutCol = -1;
+    let invoiceCol = -1;
+    let eurCol = -1;
+    let rateCol = -1;
+
+    for (let r = 0; r < templateData.length; r++) {
+      const row = templateData[r];
+      for (let c = 0; c < (row || []).length; c++) {
+        const val = String(row[c] || '').toLowerCase();
+        if (val.includes('bérlő') || val.includes('бронировка')) { headerRow = r; guestCol = c; }
+        if (val.includes('check in') || val === 'check in') checkInCol = c;
+        if (val.includes('check out') || val === 'check out') checkOutCol = c;
+        if (val.includes('felület') || val.includes('платформа')) platformCol = c;
+        if (val.includes('számla') || val.includes('пришло')) invoiceCol = c;
+        if (val.includes('eu bevétel') || val.includes('eu доходы')) eurCol = c;
+        if (val.includes('euro közép') || val.includes('euro укрс')) rateCol = c;
+      }
+      if (headerRow >= 0 && guestCol >= 0) { dataStartRow = r + 1; break; }
+    }
+
+    // Find extra costs cell
+    let extraCostRow = -1;
+    let extraCostCol = -1;
+    for (let r = 0; r < templateData.length; r++) {
+      const row = templateData[r];
+      for (let c = 0; c < (row || []).length; c++) {
+        const val = String(row[c] || '').toLowerCase();
+        if (val.includes('egyéb kiadás')) { extraCostRow = r; extraCostCol = c + 1; }
+      }
+    }
+
+    // Filter bookings for selected month (exclude overlapping from prev month based on check-in)
+    const monthFilter = currentParsed.filter(b => {
+      const ciLower = b.checkIn.toLowerCase();
+      const monthEN = MONTHS_EN[month].toLowerCase();
+      const monthHU = monthName.toLowerCase().substring(0, 3);
+      return ciLower.includes(monthEN) || ciLower.includes(monthHU) || 
+             ciLower.includes(`${year}`);
+    });
+
+    const bookingsToUse = monthFilter.length > 0 ? monthFilter : currentParsed;
+
+    // Clear old data rows and write new ones
+    if (dataStartRow >= 0) {
+      for (let i = 0; i < bookingsToUse.length; i++) {
+        const r = dataStartRow + i;
+        const b = bookingsToUse[i];
+
+        const setCell = (col, val) => {
+          if (col < 0) return;
+          const addr = XLSX.utils.encode_cell({ r, c: col });
+          if (!newSheet[addr]) newSheet[addr] = {};
+          newSheet[addr].v = val;
+          newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
+        };
+
+        if (platformCol >= 0) setCell(platformCol, 'Booking');
+        if (guestCol >= 0) setCell(guestCol, b.guest);
+        if (checkInCol >= 0) setCell(checkInCol, b.checkIn);
+        if (checkOutCol >= 0) setCell(checkOutCol, b.checkOut);
+        if (invoiceCol >= 0 && b.huf) setCell(invoiceCol, b.huf);
+        if (eurCol >= 0) setCell(eurCol, b.eur);
+        if (rateCol >= 0 && b.rate) setCell(rateCol, b.rate);
+      }
+    }
+
+    // Set extra costs
+    if (extraCosts.length > 0 && extraCostRow >= 0) {
+      const totalExtra = extraCosts.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
+      const addr = XLSX.utils.encode_cell({ r: extraCostRow, c: extraCostCol });
+      if (!newSheet[addr]) newSheet[addr] = {};
+      newSheet[addr].v = totalExtra;
+      newSheet[addr].t = 'n';
+    } else if (extraCostRow >= 0) {
+      // Clear extra costs from template
+      const addr = XLSX.utils.encode_cell({ r: extraCostRow, c: extraCostCol });
+      if (newSheet[addr]) { newSheet[addr].v = null; newSheet[addr].t = 's'; }
+    }
+
+    // Add new sheet to workbook
+    workbook.SheetNames.push(newSheetName);
+    workbook.Sheets[newSheetName] = newSheet;
+
+    // Export
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedApt.name}_${year}_${monthName}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showStatus(`✓ ${newSheetName} fül sikeresen létrehozva és letöltve!`, 'info');
+    btn.textContent = '✓ Letöltve!';
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '⬇ Elszámolás generálása és letöltés';
+    }, 3000);
+
+  } catch (err) {
+    console.error(err);
+    showStatus('Hiba: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '⬇ Elszámolás generálása és letöltés';
+  }
+}
+
+function showStatus(msg, type) {
+  const bar = document.getElementById('statusBar');
+  if (!bar) return;
+  bar.textContent = msg;
+  bar.className = `status-bar ${type} show`;
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+renderSidebar();
+
+// Keyboard shortcut for modal
+document.getElementById('newAptOwner').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('newAptNotes').focus();
+});
+</script>
+</body>
+</html>
