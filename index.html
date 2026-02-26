@@ -904,81 +904,99 @@ function parseAirbnb(text) {
   const results = [];
   if (!text.trim()) return results;
 
-  // Try CSV format first (Airbnb transaction export)
+  const parseDate = (monthStr, dayStr, yr) => {
+    const mo = {jan:'jan',feb:'feb',mar:'már',apr:'ápr',may:'máj',jun:'jún',
+                 jul:'júl',aug:'aug',sep:'szep',oct:'okt',nov:'nov',dec:'dec'};
+    const key = monthStr.toLowerCase().substring(0,3);
+    return `${yr}. ${mo[key] || key}. ${dayStr}.`;
+  };
+
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  
-  // Detect CSV: has commas and header row
-  if (text.includes(',') && (text.toLowerCase().includes('confirmation') || text.toLowerCase().includes('payout') || text.toLowerCase().includes('guest'))) {
-    // Parse CSV-like airbnb export
-    const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
-    const guestIdx = headers.findIndex(h => h.includes('guest') || h.includes('vendég'));
-    const startIdx = headers.findIndex(h => h.includes('start') || h.includes('check') || h.includes('bejelentkezés'));
-    const endIdx = headers.findIndex(h => h.includes('end') || h.includes('checkout') || h.includes('kijelentkezés'));
-    const amountIdx = headers.findIndex(h => h.includes('amount') || h.includes('payout') || h.includes('összeg'));
 
+  // Find block starts: line matching "€X.XX" or "Ft X,XXX" 
+  // followed by a line starting with "Sent" or a month name
+  const blockStarts = [];
+  for (let i = 0; i < lines.length; i++) {
+    const isAmount = /^(Ft\s+[\d,]+(\.\d+)?|€[\d,.]+|€\s+[\d,.]+)$/.test(lines[i]);
+    const nextLine = lines[i+1] || '';
+    const nextOk = /^(Sent|Arriving|January|February|March|April|May|June|July|August|September|October|November|December)/i.test(nextLine);
+    if (isAmount && nextOk) blockStarts.push(i);
+  }
+
+  // Fallback: find by "Home・" lines
+  if (blockStarts.length === 0) {
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.replace(/"/g,'').trim());
-      if (cols.length < 3) continue;
-      const guest = guestIdx >= 0 ? cols[guestIdx] : '';
-      const checkIn = startIdx >= 0 ? cols[startIdx] : '';
-      const checkOut = endIdx >= 0 ? cols[endIdx] : '';
-      const amountRaw = amountIdx >= 0 ? cols[amountIdx] : '';
-      const amount = parseFloat(amountRaw.replace(/[^0-9.-]/g,''));
-      if (!guest && !amount) continue;
-      results.push({
-        platform: 'airbnb',
-        guest: guest,
-        checkIn: checkIn,
-        checkOut: checkOut,
-        eur: isNaN(amount) ? null : amount,
-        rate: null,
-        huf: null
-      });
-    }
-    return results;
-  }
-
-  // Free text format - look for guest + date patterns
-  // Pattern: name followed by dates and amount
-  const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
-  
-  for (const block of blocks) {
-    const lines2 = block.split('\n').map(l => l.trim()).filter(Boolean);
-    
-    // Look for date patterns: "jan. 5–9." or "2026. jan. 5." style
-    const datePattern = /(\d{4}\.)?\s*(jan|feb|már|ápr|máj|jún|júl|aug|szep|okt|nov|dec)\.?\s*(\d+)[.–-]+(\d+)?/gi;
-    const amountPattern = /([\d,.]+)\s*(EUR|USD|€|\$|HUF)/gi;
-    
-    const dateMatches = [...block.matchAll(datePattern)];
-    const amountMatches = [...block.matchAll(amountPattern)];
-    
-    if (dateMatches.length === 0 && amountMatches.length === 0) continue;
-    
-    // First non-empty line is likely the guest name
-    const guestLine = lines2[0];
-    const amount = amountMatches.length > 0 ? parseFloat(amountMatches[0][1].replace(',','.')) : null;
-    
-    // Extract check-in/out from date pattern
-    let checkIn = '', checkOut = '';
-    if (dateMatches.length > 0) {
-      const dm = dateMatches[0];
-      checkIn = `${dm[1] || '2026'} ${dm[2]}. ${dm[3]}.`;
-      checkOut = dm[4] ? `${dm[1] || '2026'} ${dm[2]}. ${dm[4]}.` : '';
-    }
-
-    if (guestLine && (amount || checkIn)) {
-      results.push({
-        platform: 'airbnb',
-        guest: guestLine,
-        checkIn: checkIn,
-        checkOut: checkOut,
-        eur: amount,
-        rate: null,
-        huf: null
-      });
+      if (/[・•]/.test(lines[i])) {
+        // Guest name is the closest non-junk line before this
+        for (let j = i-1; j >= Math.max(0, i-5); j--) {
+          if (lines[j] && !/^(Ft|€|Sent|Arriving|\d)/.test(lines[j]) &&
+              !/^(January|February|March|April|May|June|July|August|September|October|November|December)/i.test(lines[j])) {
+            blockStarts.push(j);
+            break;
+          }
+        }
+      }
     }
   }
 
+  for (let b = 0; b < blockStarts.length; b++) {
+    const start = blockStarts[b];
+    const end = b + 1 < blockStarts.length ? blockStarts[b+1] : lines.length;
+    const block = lines.slice(start, end);
+
+    // Payout amount (first line)
+    let huf = null, rate = null;
+    const hufMatch = block[0].match(/^Ft\s+([\d,]+)/);
+    const eurPayMatch = block[0].match(/^€\s*([\d,.]+)/);
+    if (hufMatch) huf = parseInt(hufMatch[1].replace(/,/g,''));
+
+    // Guest name: line just before "Home・" or "Home•"
+    let guest = '', checkIn = '', checkOut = '', year = String(new Date().getFullYear());
+    for (let i = 0; i < block.length; i++) {
+      if (/[・•]/.test(block[i])) {
+        // Scan backwards for guest name
+        for (let j = i-1; j >= 0; j--) {
+          const v = block[j];
+          if (!v) continue;
+          if (/^(Ft|€|Sent|Arriving|Pending)/i.test(v)) continue;
+          if (/^(January|February|March|April|May|June|July|August|September|October|November|December)/i.test(v)) continue;
+          if (v.length < 3) continue;
+          guest = v;
+          break;
+        }
+
+        // Parse date from line like "Home・Feb 6 – 8, 2026" or "Home・Feb 14 – Mar 2, 2026"
+        const dm = block[i].match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d+)\s*[–\-]\s*(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?(\d+),?\s*(\d{4})/i);
+        if (dm) {
+          year = dm[5];
+          checkIn = parseDate(dm[1], dm[2], year);
+          checkOut = parseDate(dm[3] || dm[1], dm[4], year);
+        }
+        break;
+      }
+    }
+
+    // Total (EUR)
+    let totalEur = null;
+    const totalIdx = block.findIndex(l => /Total\s*\(EUR\)/i.test(l));
+    if (totalIdx >= 0) {
+      for (let j = totalIdx+1; j < Math.min(totalIdx+3, block.length); j++) {
+        const m = block[j].match(/^€\s*([\d,.]+)/);
+        if (m) { totalEur = parseFloat(m[1].replace(',','')); break; }
+      }
+    }
+
+    if (huf && totalEur) rate = Math.round((huf / totalEur) * 100) / 100;
+
+    if (guest && totalEur) {
+      results.push({
+        guest, checkIn, checkOut,
+        eur: totalEur, rate, huf,
+        platform: 'Airbnb',
+        currency: huf ? 'HUF' : 'EUR'
+      });
+    }
+  }
   return results;
 }
 
