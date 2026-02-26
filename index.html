@@ -640,33 +640,41 @@ function handleBulkUpload(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
 
+  const newAptIds = [];
   let processed = 0;
+
   files.forEach((file, idx) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const id = (Date.now() + idx).toString();
+      // Unique ID: timestamp + index + random to avoid collisions
+      const id = `${Date.now()}_${idx}_${Math.random().toString(36).substr(2,5)}`;
       const name = file.name.replace(/\.[^.]+$/, '');
 
-      // Check if already exists
+      // Check if already exists by name
       const exists = apartments.find(a => a.name === name);
       if (exists) {
-        // Just update the file
         excelFiles[exists.id] = { data: ev.target.result, name: file.name };
       } else {
         const apt = { id, name, owner: '', notes: '' };
         apartments.push(apt);
         excelFiles[id] = { data: ev.target.result, name: file.name };
-        if (idx === 0) pendingAptId = id;
+        newAptIds.push(id);
       }
 
       processed++;
       if (processed === files.length) {
         saveState('apartments', apartments);
         saveState('excelFiles', excelFiles);
+        // Select the first newly added apt
+        if (newAptIds.length > 0) {
+          selectedApt = apartments.find(a => a.id === newAptIds[0]);
+          pendingAptId = newAptIds[0];
+        }
         renderSidebar();
-        // Show modal to add owner/notes for the last uploaded
-        if (pendingAptId || files.length > 0) {
-          showEditModal(pendingAptId || apartments[apartments.length - 1].id, files.length);
+        renderMain();
+        // Show modal only if new apts were added
+        if (newAptIds.length > 0) {
+          showEditModal(newAptIds[0], files.length);
         }
         e.target.value = '';
       }
