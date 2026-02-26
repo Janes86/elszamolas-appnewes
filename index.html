@@ -1401,13 +1401,16 @@ async function generateExcel() {
           }
         }
 
-        // Árfolyam oszlop: fejléc alapján
+        // Árfolyam oszlop: fejléc alapján (minden lehetséges névváltozat)
         for (let c = 0; c < 30; c++) {
           const cell = templateSheet[XLSX.utils.encode_cell({ r: block.headerRow, c })];
-          if (cell && cell.v) {
-            const v = String(cell.v).toLowerCase();
-            if (v.includes('euro') || v.includes('árfolyam') || v.includes('курс') || v.includes('közép')) {
+          if (cell && cell.v !== undefined && cell.v !== null) {
+            const v = String(cell.v).toLowerCase().trim();
+            if (v.includes('euro') || v.includes('eur') || v.includes('árfolyam') || 
+                v.includes('курс') || v.includes('közép') || v.includes('kozep') ||
+                v.includes('rate') || v.includes('árfoly')) {
               rateCol = c;
+              console.log(`  rateCol found: c=${c} value="${cell.v}"`);
             }
           }
         }
@@ -1424,7 +1427,7 @@ async function generateExcel() {
           .filter(c => c >= 0 && !formulaCols.has(c))
           .forEach(c => inputCols.add(c));
 
-        console.log(`  inputCols=[${[...inputCols]}] formulaCols=[${[...formulaCols]}] rateCol=${rateCol}`);
+        console.log(`v2.1 inputCols=[${[...inputCols]}] formulaCols=[${[...formulaCols]}] rateCol=${rateCol} headerRow=${block.headerRow}`);
 
         // Input cellák törlése (képleteket NEM bántjuk)
         for (let ri = block.dataStart; ri < block.dataEnd; ri++) {
