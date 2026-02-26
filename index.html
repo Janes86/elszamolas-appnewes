@@ -1424,40 +1424,59 @@ async function generateExcel() {
         }
       }
 
-      // Clear existing data rows in this block
-      // Get max column count from template to know how many cols to clear
-      const maxCol = Math.max(...templateData.slice(block.dataStart, block.dataEnd).map(r => (r||[]).length));
+      // Find which columns have formulas (don't overwrite these!)
+      const formulaCols = new Set();
+      const inputCols = new Set();
       for (let i = 0; i < block.dataEnd - block.dataStart; i++) {
         const r = block.dataStart + i;
-        // Clear all columns that had data (platform, guest, checkIn, checkOut, invoice, eur, huf + neighbors)
-        for (let c = 0; c <= Math.max(maxCol, 12); c++) {
+        for (let c = 0; c < 30; c++) {
           const addr = XLSX.utils.encode_cell({ r, c });
-          if (newSheet[addr] && newSheet[addr].v !== undefined) {
-            // Only clear value cells, keep formula structure but clear value
-            const cell = newSheet[addr];
-            // Skip cells that are part of summary formulas
-            if (!cell.f) {
-              cell.v = '';
-              cell.t = 's';
-            }
+          if (newSheet[addr]) {
+            if (newSheet[addr].f) formulaCols.add(c);
+            else if (newSheet[addr].v !== undefined && newSheet[addr].v !== '') inputCols.add(c);
           }
         }
       }
 
-      // Write new data
+      // Find EURO közép / exchange rate column (referenced in formulas like *O9)
+      let rateCol = -1;
+      for (let c = 0; c < 30; c++) {
+        const headerAddr = XLSX.utils.encode_cell({ r: block.headerRow, c });
+        const hCell = newSheet[headerAddr];
+        if (hCell) {
+          const v = String(hCell.v || '').toLowerCase();
+          if (v.includes('euro') || v.includes('árfolyam') || v.includes('курс') || v.includes('közép')) {
+            rateCol = c;
+          }
+        }
+      }
+
+      // Clear only input columns (not formula columns) in data rows
+      for (let i = 0; i < block.dataEnd - block.dataStart; i++) {
+        const r = block.dataStart + i;
+        inputCols.forEach(c => {
+          if (!formulaCols.has(c)) {
+            const addr = XLSX.utils.encode_cell({ r, c });
+            if (newSheet[addr]) { newSheet[addr].v = ''; newSheet[addr].t = 's'; }
+          }
+        });
+      }
+
+      // Write new data — only input cells, never formula cells
       for (let i = 0; i < blockBookings.length; i++) {
         const r = block.dataStart + i;
         const b = blockBookings[i];
         const platformStr = b.platform === 'Airbnb' ? 'Airbnb' : 'booking';
 
         if (block.type === 'STANDARD') {
-          if (cols.platform >= 0) setCellVal(r, cols.platform, platformStr);
-          if (cols.guest >= 0) setCellVal(r, cols.guest, b.guest);
-          if (cols.checkIn >= 0) setCellVal(r, cols.checkIn, b.checkIn);
-          if (cols.checkOut >= 0) setCellVal(r, cols.checkOut, b.checkOut);
-          if (cols.invoice >= 0 && b.huf) setCellVal(r, cols.invoice, b.huf);
-          if (cols.eur >= 0) setCellVal(r, cols.eur, b.eur);
-          if (cols.huf >= 0 && b.huf) setCellVal(r, cols.huf, b.huf);
+          if (cols.platform >= 0 && !formulaCols.has(cols.platform)) setCellVal(r, cols.platform, platformStr);
+          if (cols.guest >= 0 && !formulaCols.has(cols.guest)) setCellVal(r, cols.guest, b.guest);
+          if (cols.checkIn >= 0 && !formulaCols.has(cols.checkIn)) setCellVal(r, cols.checkIn, b.checkIn);
+          if (cols.checkOut >= 0 && !formulaCols.has(cols.checkOut)) setCellVal(r, cols.checkOut, b.checkOut);
+          if (cols.invoice >= 0 && !formulaCols.has(cols.invoice) && b.huf) setCellVal(r, cols.invoice, b.huf);
+          if (cols.eur >= 0 && !formulaCols.has(cols.eur)) setCellVal(r, cols.eur, b.eur);
+          // Write exchange rate if available
+          if (rateCol >= 0 && b.rate) setCellVal(r, rateCol, b.rate);
 
         } else if (block.type === 'ASBOTH') {
           // EUR | platform | "guest	check-in	check-out" | HUF invoice
