@@ -1082,93 +1082,142 @@ function renderExtraList() {
 }
 
 // ─── SABLON FELISMERÉS ────────────────────────────────────────────────────────
-function detectTemplateType(templateData) {
-  // Scan all rows for known patterns
+
+// Detect all apartment blocks in a sheet
+// Returns array of {name, headerRow, dataStart, dataEnd, cols}
+function detectBlocks(templateData) {
+  const blocks = [];
+  
   for (let r = 0; r < templateData.length; r++) {
     const row = templateData[r] || [];
     const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
-
-    // Type A/B/D standard: has separate Check In / Check Out columns
+    
+    // Standard header row: has "check in" AND "check out"  
     if (rowStr.includes('check in') && rowStr.includes('check out')) {
-      // Detect column positions
-      let cols = { platform:-1, guest:-1, checkIn:-1, checkOut:-1, invoice:-1, eur:-1, huf:-1, rate:-1 };
+      const cols = { platform:-1, guest:-1, checkIn:-1, checkOut:-1, invoice:-1, eur:-1, huf:-1 };
       for (let c = 0; c < row.length; c++) {
-        const v = String(row[c] || '').toLowerCase();
+        const v = String(row[c] || '').toLowerCase().trim();
         if (v.includes('felület') || v.includes('платформа')) cols.platform = c;
         if (v.includes('bérlő') || v.includes('бронировка')) cols.guest = c;
-        if (v === 'check in' || v.includes('check in')) cols.checkIn = c;
-        if (v === 'check out' || v.includes('check out')) cols.checkOut = c;
+        if (v === 'check in') cols.checkIn = c;
+        if (v === 'check out') cols.checkOut = c;
         if (v.includes('számla') || v.includes('пришло')) cols.invoice = c;
-        if (v.includes('eu bevétel') || v.includes('eu доходы') || v.includes('eu доход')) cols.eur = c;
-        if (v.includes('huf bevét') || v.includes('huf доход') || v.includes('huf') && v.includes('bevét')) cols.huf = c;
+        if (v.includes('eu bevétel') || v.includes('eu доход') || v === 'eu bevétel') cols.eur = c;
+        if ((v.includes('huf') && (v.includes('bevét') || v.includes('доход'))) || v === 'huf bevét') cols.huf = c;
       }
-      return { type: 'STANDARD', headerRow: r, dataStart: r + 1, cols };
-    }
-
-    // Type C: Nefelejcs/Népszínház - Russian, guest+date in one cell, row number col
-    if (rowStr.includes('booking') && rowStr.includes('eur') && 
-        row.some((c,i) => String(c||'') === '1' || String(c||'') === '2')) {
-      let cols = { rowNum:-1, platform:-1, guest:-1, invoice:-1, eur:-1, cleaning:-1 };
-      for (let c = 0; c < row.length; c++) {
-        const v = String(row[c] || '').toLowerCase();
-        if (v === '1') cols.rowNum = c;
-      }
-      // Previous row has headers
-      const hRow = templateData[r-1] || [];
-      for (let c = 0; c < hRow.length; c++) {
-        const v = String(hRow[c] || '').toLowerCase();
-        if (v.includes('доход') || v.includes('huf')) cols.invoice = c;
-        if (v === 'eur') cols.eur = c;
-      }
-      cols.platform = 2; cols.guest = 3; cols.invoice = 4; cols.eur = 5;
-      return { type: 'NEFELEJCS', headerRow: r-1, dataStart: r, cols };
-    }
-
-    // Type D/E: Asbóth / Little Cola - guest+date combined in one cell, no separate checkIn/Out
-    if (rowStr.includes('booking') && !rowStr.includes('check in') &&
-        row.some(c => String(c||'').match(/booking|airbnb/i)) &&
-        r > 0) {
-      // Check if this is a data row (first few rows are data not header)
-      const firstDataRow = templateData.findIndex(rr => 
-        (rr||[]).some(c => String(c||'').match(/^booking$|^airbnb$/i))
-      );
-      if (firstDataRow === r) {
-        // Detect columns by content type
-        let cols = { platform:0, guest:1, invoice:-1, eur:-1, huf:-1 };
-        // Look at first data row to figure out cols
-        for (let c = 0; c < row.length; c++) {
-          const v = String(row[c] || '').toLowerCase();
-          const n = parseFloat(String(row[c]||'').replace(',',''));
-          if (v.includes('eur') && c > 3) cols.eur = c-1; // eur label follows value
-          if (v === 'huf' && c > 3) cols.huf = c-1;
+      
+      // Find end of data block (SUMMA / Всего row)
+      let dataEnd = templateData.length;
+      for (let rr = r + 1; rr < templateData.length; rr++) {
+        const rv = String((templateData[rr] || [])[cols.platform >= 0 ? cols.platform : 0] || '').toLowerCase();
+        const rv1 = String((templateData[rr] || [])[0] || '').toLowerCase();
+        if (rv.includes('summa') || rv.includes('всего') || rv1.includes('summa') || rv1.includes('всего')) {
+          dataEnd = rr;
+          break;
         }
-        // For Asbóth: col0=EUR, col1=platform, col2=guest+date, col3=HUF invoice, col4=HUF total
-        // For Little Cola: col0=platform, col1=guest+date, col2=invoice, col3=EUR
-        if (String(row[0]||'').match(/^\d+\.\d+$/)) {
-          // Asbóth style: first col is EUR number
-          cols = { platform:1, guest:2, invoice:3, eur:0, huf:3 };
-          return { type: 'ASBOTH', headerRow: -1, dataStart: r, cols };
-        } else {
-          // Little Cola style
-          cols = { platform:0, guest:1, invoice:2, eur:3, huf:5 };
-          return { type: 'LITTLE_COLA', headerRow: -1, dataStart: r, cols };
+      }
+      
+      // Get block name from rows above header
+      let blockName = '';
+      for (let rr = r - 1; rr >= Math.max(0, r - 5); rr--) {
+        const nameRow = templateData[rr] || [];
+        for (const cell of nameRow) {
+          const v = String(cell || '').trim();
+          if (v && v.length > 2 && !v.match(/^\d/) && 
+              !v.toLowerCase().match(/takarítás|management|ifa|egyéb|уборка|^\d+\.\d+$/)) {
+            blockName = v;
+            break;
+          }
         }
+        if (blockName) break;
+      }
+      
+      blocks.push({ type: 'STANDARD', name: blockName, headerRow: r, dataStart: r + 1, dataEnd, cols });
+    }
+  }
+  
+  // ASBOTH style: no check in/out columns, data starts from row with booking/airbnb
+  // EUR col0, platform col1, guest+date col2, invoice col3
+  if (blocks.length === 0) {
+    const firstBookingRow = templateData.findIndex(row => 
+      String((row || [])[1] || '').toLowerCase().match(/^booking$|^airbnb$/)
+    );
+    if (firstBookingRow >= 0) {
+      // Find each sub-block by looking for "bevétel forintban" or similar summary lines
+      let dataStart = firstBookingRow;
+      while (dataStart < templateData.length) {
+        let dataEnd = templateData.length;
+        let blockName = '';
+        // Get block name from rows above
+        for (let rr = dataStart - 1; rr >= Math.max(0, dataStart - 3); rr--) {
+          const nameRow = templateData[rr] || [];
+          for (const cell of nameRow) {
+            const v = String(cell || '').trim();
+            if (v && v.length > 2 && !v.match(/^\d/) && 
+                !v.toLowerCase().match(/takarítás|management|ifa|ténylegesen|bevétel|nettó|árfolyam/)) {
+              blockName = v; break;
+            }
+          }
+          if (blockName) break;
+        }
+        // Find end
+        for (let rr = dataStart + 1; rr < templateData.length; rr++) {
+          const v = String((templateData[rr] || [])[0] || '').toLowerCase();
+          if (v.includes('bevétel') || v.includes('összesen') || v.includes('management') || v.includes('nettó')) {
+            dataEnd = rr; break;
+          }
+        }
+        blocks.push({
+          type: 'ASBOTH', name: blockName, headerRow: -1, dataStart, dataEnd,
+          cols: { platform: 1, guest: 2, invoice: 3, eur: 0, huf: 3 }
+        });
+        // Find next block
+        let nextStart = -1;
+        for (let rr = dataEnd + 1; rr < templateData.length; rr++) {
+          if (String((templateData[rr] || [])[1] || '').toLowerCase().match(/^booking$|^airbnb$/)) {
+            nextStart = rr; break;
+          }
+        }
+        if (nextStart < 0) break;
+        dataStart = nextStart;
       }
     }
   }
-  return { type: 'UNKNOWN', headerRow: -1, dataStart: -1, cols: {} };
-}
 
-function formatDateHU(dateStr) {
-  // Convert various date formats to "2026. jan. 5." style
-  if (!dateStr) return '';
-  const months = {
-    jan:'jan',feb:'feb',mar:'már',apr:'ápr',may:'máj',jun:'jún',
-    jul:'júl',aug:'aug',sep:'szep',oct:'okt',nov:'nov',dec:'dec',
-    'jan.':'jan','feb.':'feb','már.':'már','ápr.':'ápr','máj.':'máj','jún.':'jún',
-    'júl.':'júl','aug.':'aug','szep.':'szep','okt.':'okt','nov.':'nov','dec.':'dec'
-  };
-  return dateStr; // already formatted by parser
+  // NEFELEJCS style: row number | platform | guest+date | HUF | EUR
+  if (blocks.length === 0) {
+    for (let r = 0; r < templateData.length; r++) {
+      const row = templateData[r] || [];
+      if (String(row[1] || '') === '1' && String(row[2] || '').toLowerCase().match(/booking|airbnb/)) {
+        let dataEnd = templateData.length;
+        for (let rr = r; rr < templateData.length; rr++) {
+          const v = String((templateData[rr] || [])[1] || '').toLowerCase();
+          if (v.includes('всего') || v.includes('összesen')) { dataEnd = rr; break; }
+        }
+        let blockName = '';
+        for (let rr = r - 1; rr >= Math.max(0, r - 3); rr--) {
+          for (const cell of (templateData[rr] || [])) {
+            const v = String(cell || '').trim();
+            if (v && v.length > 2 && !v.toLowerCase().match(/доход|уборка|huf|eur/)) { blockName = v; break; }
+          }
+          if (blockName) break;
+        }
+        blocks.push({
+          type: 'NEFELEJCS', name: blockName, headerRow: r - 1, dataStart: r, dataEnd,
+          cols: { rowNum: 1, platform: 2, guest: 3, invoice: 4, eur: 5 }
+        });
+        // Find next block
+        let nextStart = -1;
+        for (let rr = dataEnd + 1; rr < templateData.length; rr++) {
+          if (String((templateData[rr] || [])[1] || '') === '1') { nextStart = rr; break; }
+        }
+        if (nextStart < 0) break;
+        r = nextStart - 1;
+      }
+    }
+  }
+
+  return blocks;
 }
 
 // ─── EXCEL GENERATION ─────────────────────────────────────────────────────────
@@ -1199,9 +1248,8 @@ async function generateExcel() {
     const workbook = XLSX.read(bytes, { type: 'array', cellStyles: true });
     const sheets = workbook.SheetNames;
 
-    // Find template sheet - use last non-summary sheet
+    // Find best template sheet (most recent non-summary)
     let templateSheetName = sheets[sheets.length - 1];
-    // Skip summary sheets (годовой/ГОД/Összes/Munka)
     for (let i = sheets.length - 1; i >= 0; i--) {
       const n = sheets[i].toLowerCase();
       if (!n.includes('год') && !n.includes('összes') && !n.includes('munka') && n !== 'sheet1') {
@@ -1212,26 +1260,32 @@ async function generateExcel() {
     const templateSheet = workbook.Sheets[templateSheetName];
     const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null });
 
-    // Detect template type
-    const tmpl = detectTemplateType(templateData);
-    console.log('Template type:', tmpl.type, tmpl);
+    // Detect all blocks in the template
+    const blocks = detectBlocks(templateData);
+    console.log('Detected blocks:', blocks.map(b => `${b.type}:${b.name}(R${b.dataStart}-${b.dataEnd})`));
 
-    // Create new sheet name based on template type
-    let newSheetName;
-    const aptShortName = (selectedApt.notes || selectedApt.name).split(',')[0].trim().substring(0, 15);
-    if (tmpl.type === 'NEFELEJCS') {
-      // Russian style: "Денис 01. 2026"
-      const m = String(month + 1).padStart(2, '0');
-      newSheetName = `Денис ${m}. ${year}`.substring(0, 31);
-    } else if (templateSheetName.match(/Квартир/)) {
-      const m = String(month + 1).padStart(2, '0');
-      newSheetName = `Квартиры ${m}.${year}`.substring(0, 31);
-    } else {
-      newSheetName = `${monthName}i elsz ${year} ${aptShortName}`.substring(0, 31);
-    }
-
-    // Deep copy template sheet
+    // Deep copy template sheet (preserves ALL formatting/formulas)
     const newSheet = JSON.parse(JSON.stringify(templateSheet));
+
+    // Helper functions
+    const setCellVal = (r, c, val) => {
+      if (r < 0 || c < 0) return;
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!newSheet[addr]) newSheet[addr] = { t: typeof val === 'number' ? 'n' : 's' };
+      newSheet[addr].v = val;
+      newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
+      // Clear formula so value is used
+      delete newSheet[addr].f;
+    };
+
+    const clearDataCell = (r, c) => {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (newSheet[addr]) {
+        newSheet[addr].v = '';
+        newSheet[addr].t = 's';
+        delete newSheet[addr].f;
+      }
+    };
 
     // Filter bookings for selected month
     const monthFilter = currentParsed.filter(b => {
@@ -1242,151 +1296,109 @@ async function generateExcel() {
     });
     const bookingsToUse = monthFilter.length > 0 ? monthFilter : currentParsed;
 
-    // Helper to set cell value
-    const setCell = (r, c, val, type) => {
-      if (r < 0 || c < 0) return;
-      const addr = XLSX.utils.encode_cell({ r, c });
-      if (!newSheet[addr]) newSheet[addr] = {};
-      newSheet[addr].v = val;
-      newSheet[addr].t = type || (typeof val === 'number' ? 'n' : 's');
-    };
+    // If multiple blocks, ask user which block to fill
+    // For now: if only 1 block, fill it. If multiple, fill all (sorted by name)
+    // TODO: per-unit selection
+    const targetBlocks = blocks.length === 1 ? blocks : blocks;
 
-    const clearCell = (r, c) => {
-      const addr = XLSX.utils.encode_cell({ r, c });
-      if (newSheet[addr]) { newSheet[addr].v = ''; newSheet[addr].t = 's'; }
-    };
-
-    const cols = tmpl.cols;
-
-    if (tmpl.type === 'STANDARD') {
-      // Standard: clear existing data rows, write new ones
-      // First find how many data rows exist (until SUMMA or empty platform col)
-      let existingDataRows = 0;
-      for (let r = tmpl.dataStart; r < templateData.length; r++) {
-        const row = templateData[r] || [];
-        const platformVal = String(row[cols.platform >= 0 ? cols.platform : 0] || '').toLowerCase();
-        if (platformVal.includes('summa') || platformVal.includes('всего') || platformVal.includes('összesen')) break;
-        if (platformVal.includes('booking') || platformVal.includes('airbnb')) existingDataRows++;
-        else if (existingDataRows > 0) break;
+    for (const block of targetBlocks) {
+      const cols = block.cols;
+      
+      // Determine which bookings go to this block
+      // If only 1 block, all bookings. If multiple, try matching by unit name
+      let blockBookings = bookingsToUse;
+      if (blocks.length > 1 && block.name) {
+        const nameLower = block.name.toLowerCase();
+        // Filter by apartment note matching block name
+        const aptNotes = (selectedApt.notes || '').toLowerCase().split(',').map(s => s.trim());
+        const matchIdx = aptNotes.findIndex(n => nameLower.includes(n) || n.includes(nameLower.split(' ')[0]));
+        if (matchIdx >= 0) {
+          // Can't split bookings automatically - fill all in first block, leave others for manual
+          blockBookings = targetBlocks.indexOf(block) === 0 ? bookingsToUse : [];
+        }
       }
 
-      // Clear existing data rows
-      const maxRows = Math.max(existingDataRows, bookingsToUse.length) + 5;
-      for (let i = 0; i < maxRows; i++) {
-        const r = tmpl.dataStart + i;
-        [cols.platform, cols.guest, cols.checkIn, cols.checkOut, cols.invoice, cols.eur, cols.huf].forEach(c => {
-          if (c >= 0) clearCell(r, c);
-        });
+      // Clear existing data rows in this block
+      const maxClear = block.dataEnd - block.dataStart + 2;
+      for (let i = 0; i < maxClear; i++) {
+        const r = block.dataStart + i;
+        if (r >= block.dataEnd) break;
+        const dataCols = [cols.platform, cols.guest, cols.checkIn, cols.checkOut, cols.invoice, cols.eur, cols.huf].filter(c => c >= 0);
+        dataCols.forEach(c => clearDataCell(r, c));
+        if (block.type === 'NEFELEJCS') clearDataCell(r, cols.rowNum);
       }
 
       // Write new data
-      for (let i = 0; i < bookingsToUse.length; i++) {
-        const r = tmpl.dataStart + i;
-        const b = bookingsToUse[i];
-        setCell(r, cols.platform, b.platform === 'Airbnb' ? 'Airbnb' : 'booking');
-        setCell(r, cols.guest, b.guest);
-        if (cols.checkIn >= 0) setCell(r, cols.checkIn, b.checkIn);
-        if (cols.checkOut >= 0) setCell(r, cols.checkOut, b.checkOut);
-        if (cols.invoice >= 0 && b.huf) setCell(r, cols.invoice, b.huf, 'n');
-        if (cols.eur >= 0) setCell(r, cols.eur, b.eur, 'n');
-        if (cols.huf >= 0 && b.huf) setCell(r, cols.huf, b.huf, 'n');
-      }
+      for (let i = 0; i < blockBookings.length; i++) {
+        const r = block.dataStart + i;
+        const b = blockBookings[i];
+        const platformStr = b.platform === 'Airbnb' ? 'Airbnb' : 'booking';
 
-    } else if (tmpl.type === 'ASBOTH') {
-      // Asbóth style: EUR | platform | guest+date | HUF invoice | HUF total
-      // Clear existing booking rows first
-      for (let i = 0; i < 20; i++) {
-        const r = tmpl.dataStart + i;
-        const row = templateData[r] || [];
-        const platformVal = String(row[1] || '').toLowerCase();
-        if (!platformVal.includes('booking') && !platformVal.includes('airbnb') && i > 0) break;
-        [0,1,2,3,4].forEach(c => clearCell(r, c));
-      }
+        if (block.type === 'STANDARD') {
+          if (cols.platform >= 0) setCellVal(r, cols.platform, platformStr);
+          if (cols.guest >= 0) setCellVal(r, cols.guest, b.guest);
+          if (cols.checkIn >= 0) setCellVal(r, cols.checkIn, b.checkIn);
+          if (cols.checkOut >= 0) setCellVal(r, cols.checkOut, b.checkOut);
+          if (cols.invoice >= 0 && b.huf) setCellVal(r, cols.invoice, b.huf);
+          if (cols.eur >= 0) setCellVal(r, cols.eur, b.eur);
+          if (cols.huf >= 0 && b.huf) setCellVal(r, cols.huf, b.huf);
 
-      for (let i = 0; i < bookingsToUse.length; i++) {
-        const r = tmpl.dataStart + i;
-        const b = bookingsToUse[i];
-        // Format: "GuestName	2026. jan. 5.	2026. jan. 10."
-        const guestCell = `${b.guest}	${b.checkIn}	${b.checkOut}`;
-        setCell(r, 0, b.eur, 'n');
-        setCell(r, 1, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
-        setCell(r, 2, guestCell);
-        if (b.huf) setCell(r, 3, b.huf, 'n');
-      }
+        } else if (block.type === 'ASBOTH') {
+          // EUR | platform | "guest	check-in	check-out" | HUF invoice
+          setCellVal(r, 0, b.eur);
+          setCellVal(r, 1, platformStr);
+          setCellVal(r, 2, `${b.guest}	${b.checkIn}	${b.checkOut}`);
+          if (b.huf) setCellVal(r, 3, b.huf);
 
-    } else if (tmpl.type === 'LITTLE_COLA') {
-      // Little Cola: platform | guest+date | invoice | EUR
-      for (let i = 0; i < 20; i++) {
-        const r = tmpl.dataStart + i;
-        const row = templateData[r] || [];
-        const platformVal = String(row[0] || '').toLowerCase();
-        if (!platformVal.includes('booking') && !platformVal.includes('airbnb') && i > 0) break;
-        [0,1,2,3].forEach(c => clearCell(r, c));
-      }
-
-      for (let i = 0; i < bookingsToUse.length; i++) {
-        const r = tmpl.dataStart + i;
-        const b = bookingsToUse[i];
-        const guestCell = `${b.guest}	${b.checkIn}	${b.checkOut}`;
-        setCell(r, 0, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
-        setCell(r, 1, guestCell);
-        if (b.huf) setCell(r, 2, b.huf, 'n');
-        setCell(r, 3, b.eur, 'n');
-      }
-
-    } else if (tmpl.type === 'NEFELEJCS') {
-      // Nefelejcs: rownum | platform | guest+date | HUF | EUR
-      for (let i = 0; i < 15; i++) {
-        const r = tmpl.dataStart + i;
-        [0,1,2,3,4,5].forEach(c => clearCell(r, c));
-      }
-
-      for (let i = 0; i < bookingsToUse.length; i++) {
-        const r = tmpl.dataStart + i;
-        const b = bookingsToUse[i];
-        const guestCell = `${b.guest}	${b.checkIn}	${b.checkOut}`;
-        setCell(r, 0, '', 's');
-        setCell(r, 1, i + 1, 'n');
-        setCell(r, 2, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
-        setCell(r, 3, guestCell);
-        if (b.huf) setCell(r, 4, b.huf, 'n');
-        setCell(r, 5, b.eur, 'n');
-      }
-
-    } else {
-      // Unknown - best effort with STANDARD approach
-      showStatus('Ismeretlen sablon — alapértelmezett kitöltés.', 'info');
-      for (let i = 0; i < bookingsToUse.length; i++) {
-        const r = (tmpl.dataStart >= 0 ? tmpl.dataStart : 13) + i;
-        const b = bookingsToUse[i];
-        setCell(r, 0, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
-        setCell(r, 1, b.guest);
-        setCell(r, 2, b.checkIn);
-        setCell(r, 3, b.checkOut);
-        setCell(r, 4, b.huf || '', b.huf ? 'n' : 's');
-        setCell(r, 5, b.eur, 'n');
+        } else if (block.type === 'NEFELEJCS') {
+          // empty | rownum | platform | "guest	check-in	check-out" | HUF | EUR
+          setCellVal(r, cols.rowNum, i + 1);
+          setCellVal(r, cols.platform, platformStr);
+          setCellVal(r, cols.guest, `${b.guest}	${b.checkIn}	${b.checkOut}`);
+          if (b.huf) setCellVal(r, cols.invoice, b.huf);
+          setCellVal(r, cols.eur, b.eur);
+        }
       }
     }
 
     // Extra costs
-    let extraCostRow = -1, extraCostCol = -1;
     for (let r = 0; r < templateData.length; r++) {
       const row = templateData[r] || [];
       for (let c = 0; c < row.length; c++) {
         const v = String(row[c] || '').toLowerCase();
-        if (v.includes('egyéb kiadás') || v.includes('egyéb nem terv')) { extraCostRow = r; extraCostCol = c + 1; }
+        if (v.includes('egyéb kiadás') || v.includes('egyéb nem terv')) {
+          if (extraCosts.length > 0) {
+            const total = extraCosts.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+            setCellVal(r, c + 1, total);
+          }
+        }
       }
     }
-    if (extraCosts.length > 0 && extraCostRow >= 0) {
-      const totalExtra = extraCosts.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
-      setCell(extraCostRow, extraCostCol, totalExtra, 'n');
+
+    // Create new sheet name
+    let newSheetName;
+    const aptShort = (selectedApt.notes || selectedApt.name).split(',')[0].trim().substring(0, 12);
+    if (templateSheetName.match(/Квартиры|Денис/)) {
+      const m = String(month + 1).padStart(2, '0');
+      newSheetName = templateSheetName.replace(/\d{2}\.\d{4}/, `${m}.${year}`).substring(0, 31);
+    } else if (templateSheetName.match(/\d{4}\.\d{2}/)) {
+      newSheetName = `${year}.${String(month + 1).padStart(2, '0')}`.substring(0, 31);
+    } else {
+      newSheetName = `${monthName}i elsz ${year} ${aptShort}`.substring(0, 31);
     }
 
-    // Add new sheet and export
-    workbook.SheetNames.push(newSheetName);
-    workbook.Sheets[newSheetName] = newSheet;
+    // Avoid duplicate sheet names
+    let finalName = newSheetName;
+    let suffix = 2;
+    while (workbook.SheetNames.includes(finalName)) {
+      finalName = `${newSheetName.substring(0, 28)} ${suffix++}`;
+    }
 
-    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    workbook.SheetNames.push(finalName);
+    workbook.Sheets[finalName] = newSheet;
+
+    // Export
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1395,7 +1407,8 @@ async function generateExcel() {
     a.click();
     URL.revokeObjectURL(url);
 
-    showStatus(`✓ ${newSheetName} fül létrehozva! (Sablon: ${tmpl.type})`, 'info');
+    const blockInfo = blocks.map(b => b.name || b.type).join(', ');
+    showStatus(`✓ "${finalName}" fül létrehozva! (${blocks.length} blokk: ${blockInfo})`, 'info');
     btn.textContent = '✓ Letöltve!';
     setTimeout(() => {
       btn.disabled = false;
