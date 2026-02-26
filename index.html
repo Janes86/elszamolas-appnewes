@@ -1,1 +1,1558 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apartmanok elszámolásai</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
 
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #c8a96e;
+    --accent2: #7eb8a4;
+    --text: #e8e4dc;
+    --text2: #8a8580;
+    --danger: #c97070;
+    --success: #7eb8a4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+
+  header span {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text2);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: calc(100vh - 73px);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    background: var(--surface);
+  }
+
+  .sidebar-section {
+    padding: 0 20px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text2);
+    padding: 16px 20px 8px;
+    display: block;
+  }
+
+  .apt-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 0;
+    transition: background 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .apt-item:hover { background: var(--surface2); }
+
+  .apt-item.active {
+    background: var(--surface2);
+    border-left-color: var(--accent);
+  }
+
+  .apt-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text2);
+    flex-shrink: 0;
+  }
+
+  .apt-item.active .apt-dot { background: var(--accent); }
+  .apt-item.has-file .apt-dot { background: var(--success); }
+
+  .apt-name {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .apt-sub {
+    font-size: 11px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .add-apt-btn {
+    margin: 8px 20px;
+    width: calc(100% - 40px);
+    padding: 9px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text2);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+
+  .add-apt-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* MAIN */
+  .main {
+    padding: 40px;
+    max-width: 900px;
+  }
+
+  .page-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .page-sub {
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 32px;
+  }
+
+  /* STEPS */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .step-header:hover { background: var(--surface2); }
+
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text2);
+    flex-shrink: 0;
+  }
+
+  .step.done .step-num {
+    background: var(--success);
+    border-color: var(--success);
+    color: var(--bg);
+  }
+
+  .step-title { font-size: 15px; font-weight: 500; }
+  .step-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  .step-body {
+    padding: 0 20px 20px 62px;
+    display: none;
+  }
+
+  .step.open .step-body { display: block; }
+
+  /* UPLOAD ZONE */
+  .upload-zone {
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 28px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(200, 169, 110, 0.04);
+  }
+
+  .upload-zone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .upload-icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-text { font-size: 13px; color: var(--text2); }
+  .upload-text strong { color: var(--accent); }
+
+  .file-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(126, 184, 164, 0.1);
+    border: 1px solid var(--success);
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--success);
+    font-family: 'DM Mono', monospace;
+    margin-top: 12px;
+  }
+
+  /* TEXTAREA */
+  .payout-textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 14px;
+    resize: vertical;
+    min-height: 160px;
+    outline: none;
+    transition: border-color 0.15s;
+    line-height: 1.6;
+  }
+
+  .payout-textarea:focus { border-color: var(--accent); }
+  .payout-textarea::placeholder { color: var(--text2); }
+
+  /* PARSED PREVIEW */
+  .parsed-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 12px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .parsed-table th {
+    text-align: left;
+    color: var(--text2);
+    font-weight: 400;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+
+  .parsed-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .parsed-table tr:last-child td { border-bottom: none; }
+
+  .parsed-table td.num { color: var(--accent); }
+  .parsed-table td.eur { color: var(--accent2); }
+
+  /* MONTH SELECT */
+  .month-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .month-btn {
+    padding: 7px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .month-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .month-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+
+  /* EXTRA COSTS */
+  .extra-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+
+  .input-field {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .input-field:focus { border-color: var(--accent); }
+  .input-field::placeholder { color: var(--text2); }
+  .input-field.wide { flex: 1; }
+
+  .remove-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .remove-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+  .add-extra-btn {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text2);
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s;
+    margin-top: 4px;
+  }
+
+  .add-extra-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  /* GENERATE BTN */
+  .generate-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+    margin-top: 8px;
+  }
+
+  .generate-btn:hover { background: #d4b87e; transform: translateY(-1px); }
+  .generate-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* STATUS */
+  .status-bar {
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  .status-bar.info { background: rgba(126, 184, 164, 0.1); border: 1px solid var(--success); color: var(--success); }
+  .status-bar.error { background: rgba(201, 112, 112, 0.1); border: 1px solid var(--danger); color: var(--danger); }
+  .status-bar.show { display: block; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.show { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px;
+    width: 360px;
+    max-width: 90vw;
+  }
+
+  .modal h3 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: var(--accent);
+  }
+
+  .modal-btns {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    justify-content: flex-end;
+  }
+
+  .btn-primary {
+    padding: 9px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-primary:hover { background: #d4b87e; }
+
+  .btn-ghost {
+    padding: 9px 20px;
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-ghost:hover { border-color: var(--text2); color: var(--text); }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 80px 40px;
+    color: var(--text2);
+  }
+
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-state h2 { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--text); margin-bottom: 8px; }
+  .empty-state p { font-size: 14px; line-height: 1.6; max-width: 320px; margin: 0 auto; }
+
+  label.field-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+
+  .parse-btn {
+    margin-top: 10px;
+    padding: 8px 18px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .parse-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  .warning-note {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 6px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Apartmanok elszámolásai</h1>
+  <span>Havi Booking / Airbnb feldolgozó</span>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <span class="sidebar-label">Lakások excel táblázatai</span>
+    <div id="aptList"></div>
+    <div class="sidebar-section">
+      <div style="position:relative">
+        <button class="add-apt-btn" onclick="document.getElementById('bulkUpload').click()">+ Excel(ek) feltöltése</button>
+        <input type="file" id="bulkUpload" accept=".xlsx,.xls" multiple style="display:none" onchange="handleBulkUpload(event)" />
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="mainContent">
+    <div class="empty-state">
+      <div class="icon">🏠</div>
+      <h2>Válassz táblázatot</h2>
+      <p>Adj hozzá lakás excel táblázatokat a bal oldali panelen, majd töltsd fel a sablont és a Booking/Airbnb adatokat.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ADD APARTMENT MODAL -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal" style="width:440px">
+    <h3>Adatok megadása</h3>
+    <div id="modalFileBadge" style="margin-bottom:12px"></div>
+    <label class="field-label">Tulajdonos neve</label>
+    <input class="input-field" style="width:100%" id="newAptOwner" placeholder="pl. Kiss János" />
+    <label class="field-label">Megjegyzés (opcionális)</label>
+    <input class="input-field" style="width:100%" id="newAptNotes" placeholder="pl. Asbóth, Mária, Somogyi" />
+    <div class="modal-btns">
+      <button class="btn-ghost" onclick="hideAddModal()">Mégse</button>
+      <button class="btn-primary" onclick="addApartment()">Mentés</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+function saveState(key, val) {
+  try { sessionStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+}
+function loadState(key, def) {
+  try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) : def; } catch(e) { return def; }
+}
+
+let apartments = loadState('apartments', []);
+let selectedApt = null;
+let excelFiles = loadState('excelFiles', {});
+let currentParsed = [];
+let extraCosts = [];
+
+const MONTHS_HU = ['Január','Február','Március','Április','Május','Június','Július','Augusztus','Szeptember','Október','November','December'];
+const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ─── SIDEBAR ─────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  const list = document.getElementById('aptList');
+  if (apartments.length === 0) {
+    list.innerHTML = '<div style="padding:10px 20px;font-size:12px;color:var(--text2)">Még nincs lakás</div>';
+    return;
+  }
+  list.innerHTML = apartments.map(apt => `
+    <div class="apt-item ${selectedApt?.id === apt.id ? 'active' : ''} ${excelFiles[apt.id] ? 'has-file' : ''}" 
+         onclick="selectApt('${apt.id}')">
+      <div class="apt-dot"></div>
+      <div>
+        <div class="apt-name">${apt.owner || apt.name}</div>
+        <div class="apt-sub">${apt.notes || apt.name}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectApt(id) {
+  selectedApt = apartments.find(a => a.id === id);
+  extraCosts = [];
+  currentParsed = [];
+  renderSidebar();
+  renderMain();
+}
+
+// ─── MODAL ───────────────────────────────────────────────────────────────────
+let pendingAptId = null;
+
+// ─── EXCEL VALIDÁCIÓ ─────────────────────────────────────────────────────────
+function validateExcel(data) {
+  // data = array of rows from sheet_to_json
+  if (!data || data.length < 3) return { valid: false, reason: 'A fájl túl kevés sort tartalmaz.' };
+
+  const allText = data.map(r => (r||[]).map(c => String(c||'').toLowerCase()).join('|')).join('\n');
+
+  // Check for known patterns
+  const hasCheckIn = allText.includes('check in');
+  const hasCheckOut = allText.includes('check out');
+  const hasGuest = allText.includes('bérlő') || allText.includes('бронировка');
+  const hasPlatform = allText.includes('felület') || allText.includes('платформа') || allText.includes('booking') || allText.includes('airbnb');
+  const hasRevenue = allText.includes('bevétel') || allText.includes('доход') || allText.includes('huf');
+  const hasAsboth = data.some(r => String((r||[])[1]||'').toLowerCase().match(/^booking$|^airbnb$/));
+  const hasNefelejcs = data.some((r,i) => String((r||[])[1]||'') === '1' && String((r||[])[2]||'').toLowerCase().includes('booking'));
+
+  if ((hasCheckIn && hasCheckOut && hasPlatform) || hasAsboth || hasNefelejcs) {
+    return { valid: true };
+  }
+
+  if (hasRevenue && hasPlatform) {
+    return { valid: true }; // Partial match, allow
+  }
+
+  return { 
+    valid: false, 
+    reason: 'Nem ismerhető fel apartman elszámolási sablon. Ellenőrizd hogy a megfelelő fájlt töltötted-e fel.'
+  };
+}
+
+// Bulk upload - multiple files at once
+function handleBulkUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+
+  const newAptIds = [];
+  const validationErrors = [];
+  let processed = 0;
+
+  files.forEach((file, idx) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      // Validate Excel structure before accepting
+      try {
+        const base64 = ev.target.result.split(',')[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const wb = XLSX.read(bytes, { type: 'array' });
+        // Check last non-summary sheet
+        let sheetName = wb.SheetNames[wb.SheetNames.length - 1];
+        for (let i = wb.SheetNames.length - 1; i >= 0; i--) {
+          const n = wb.SheetNames[i].toLowerCase();
+          if (!n.includes('год') && !n.includes('összes') && !n.includes('munka') && n !== 'sheet1') {
+            sheetName = wb.SheetNames[i]; break;
+          }
+        }
+        const sheetData = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null, blankrows: true });
+        const validation = validateExcel(sheetData);
+        if (!validation.valid) {
+          // Warn but still allow — don't block upload
+          validationErrors.push(`⚠ ${file.name}: ${validation.reason}`);
+        }
+      } catch(err) {
+        validationErrors.push(`⚠ ${file.name}: Nem sikerült ellenőrizni a fájlt (${err.message})`);
+      }
+
+      const id = `${Date.now()}_${idx}_${Math.random().toString(36).substr(2,5)}`;
+      const name = file.name.replace(/\.[^.]+$/, '');
+      const exists = apartments.find(a => a.name === name);
+      if (exists) {
+        excelFiles[exists.id] = { data: ev.target.result, name: file.name };
+      } else {
+        const apt = { id, name, owner: '', notes: '' };
+        apartments.push(apt);
+        excelFiles[id] = { data: ev.target.result, name: file.name };
+        newAptIds.push(id);
+      }
+
+      processed++;
+      if (processed === files.length) finalizeBulkUpload(e, newAptIds, validationErrors);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function finalizeBulkUpload(e, newAptIds, errors) {
+  saveState('apartments', apartments);
+  saveState('excelFiles', excelFiles);
+  if (newAptIds.length > 0) {
+    selectedApt = apartments.find(a => a.id === newAptIds[0]);
+    pendingAptId = newAptIds[0];
+  }
+  renderSidebar();
+  renderMain();
+  if (errors.length > 0) {
+    // Show validation errors
+    const errMsg = errors.join('\n');
+    showStatus(errMsg, 'error');
+    // Also show modal if some valid files were uploaded
+    if (newAptIds.length > 0) {
+      setTimeout(() => showEditModal(newAptIds[0], newAptIds.length), 500);
+    }
+  } else if (newAptIds.length > 0) {
+    showEditModal(newAptIds[0], newAptIds.length);
+  }
+  e.target.value = '';
+}
+
+function showEditModal(aptId, count) {
+  const apt = apartments.find(a => a.id === aptId);
+  if (!apt) return;
+  pendingAptId = aptId;
+  document.getElementById('addModal').classList.add('show');
+  document.getElementById('newAptOwner').value = apt.owner || '';
+  document.getElementById('newAptNotes').value = apt.notes || '';
+  const badge = document.getElementById('modalFileBadge');
+  badge.innerHTML = count > 1
+    ? `<div class="file-badge">✓ ${count} Excel fájl feltöltve</div>`
+    : `<div class="file-badge">✓ ${apt.name}</div>`;
+  setTimeout(() => document.getElementById('newAptOwner').focus(), 100);
+}
+
+function showAddModal() {
+  // Trigger file upload directly
+  document.getElementById('bulkUpload').click();
+}
+
+function hideAddModal() {
+  document.getElementById('addModal').classList.remove('show');
+  pendingAptId = null;
+}
+
+function addApartment() {
+  const owner = document.getElementById('newAptOwner').value.trim();
+  const notes = document.getElementById('newAptNotes').value.trim();
+
+  if (pendingAptId) {
+    // Update existing apt
+    const apt = apartments.find(a => a.id === pendingAptId);
+    if (apt) { apt.owner = owner; apt.notes = notes; }
+  } else {
+    if (!owner) return;
+    const apt = { id: Date.now().toString(), name: owner, owner, notes };
+    apartments.push(apt);
+  }
+
+  saveState('apartments', apartments);
+  hideAddModal();
+  renderSidebar();
+  if (pendingAptId) selectApt(pendingAptId);
+  else selectApt(apartments[apartments.length - 1].id);
+}
+
+// (duplicate removed)
+
+// ─── MAIN CONTENT ─────────────────────────────────────────────────────────────
+function renderMain() {
+  if (!selectedApt) return;
+  const hasFile = !!excelFiles[selectedApt.id];
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="page-title">${selectedApt.owner || selectedApt.name}</div>
+    <div class="page-sub">${selectedApt.notes ? selectedApt.notes + ' · ' : ''}Havi elszámolás generáló</div>
+
+    <div class="steps">
+
+      <!-- STEP 1: Excel sablon -->
+      <div class="step ${hasFile ? 'done' : ''} open" id="step1">
+        <div class="step-header" onclick="toggleStep('step1')">
+          <div class="step-num">${hasFile ? '✓' : '1'}</div>
+          <div>
+            <div class="step-title">Excel sablon feltöltése</div>
+            <div class="step-desc">${hasFile ? 'Sablon betöltve — újra feltöltheted ha frissítetted' : 'Töltsd fel az Excel fájlt amely tartalmazza az előző hónapokat'}</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <div class="upload-zone" id="excelZone">
+            <input type="file" accept=".xlsx,.xls" onchange="handleExcelUpload(event)" />
+            <div class="upload-icon">📊</div>
+            <div class="upload-text">Húzd ide vagy <strong>kattints a feltöltéshez</strong></div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">.xlsx fájl</div>
+          </div>
+          ${hasFile ? `<div class="file-badge">✓ ${selectedApt.name}_sablon.xlsx betöltve</div>` : ''}
+        </div>
+      </div>
+
+      <!-- STEP 2: Hónap -->
+      <div class="step open" id="step2">
+        <div class="step-header" onclick="toggleStep('step2')">
+          <div class="step-num">2</div>
+          <div>
+            <div class="step-title">Hónap kiválasztása</div>
+            <div class="step-desc">Melyik hónapra generálod az elszámolást?</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <label class="field-label">Év</label>
+          <input class="input-field" id="yearInput" value="${new Date().getFullYear()}" style="width:100px" type="number" />
+          <label class="field-label">Hónap</label>
+          <div class="month-row" id="monthRow">
+            ${MONTHS_HU.map((m,i) => `
+              <button class="month-btn ${i === new Date().getMonth() ? 'active' : ''}" 
+                      onclick="selectMonth(${i}, this)">${m}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Booking.com payout -->
+      <div class="step open" id="step3">
+        <div class="step-header" onclick="toggleStep('step3')">
+          <div class="step-num">3</div>
+          <div>
+            <div class="step-title">Booking.com payout adatok</div>
+            <div class="step-desc">Másold be a Booking.com payout oldal szövegét</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <label class="field-label">Booking.com payout szöveg</label>
+          <textarea class="payout-textarea" id="payoutText" 
+            placeholder="Feb 5 2026&#10;Jan 29 - Feb 4&#10;0Bltd9f3TZvA4Rya&#10;PDF/CSV&#10;SentHUF 142,715&#10;Booking reference number...&#10;&#10;Másold be a teljes Booking.com payout szöveget ide..."></textarea>
+          <div class="warning-note">💡 Booking.com admin → Pénzügyek → Kifizetések oldalról másold ki</div>
+          
+          <div class="divider"></div>
+          
+          <label class="field-label">Airbnb payout szöveg</label>
+          <textarea class="payout-textarea" id="airbnbText" 
+            placeholder="Másold be az Airbnb payout / tranzakció szöveget ide...&#10;&#10;pl.:&#10;Vendég neve&#10;Bejelentkezés: 2026. jan. 5.&#10;Kijelentkezés: 2026. jan. 9.&#10;Kifizetés: 85,94 USD / EUR&#10;..."></textarea>
+          <div class="warning-note">💡 Airbnb → Fizetések → Tranzakciók oldalról másold ki — vagy töltsd fel a CSV exportot</div>
+          
+          <button class="parse-btn" onclick="parsePayout()">▶ Mindkettő feldolgozása</button>
+          <div id="parsedPreview"></div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Egyéb kiadások -->
+      <div class="step open" id="step4">
+        <div class="step-header" onclick="toggleStep('step4')">
+          <div class="step-num">4</div>
+          <div>
+            <div class="step-title">Egyéb kiadások (opcionális)</div>
+            <div class="step-desc">Rendkívüli kiadások hozzáadása</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <div id="extraList"></div>
+          <button class="add-extra-btn" onclick="addExtraRow()">+ Kiadás hozzáadása</button>
+        </div>
+      </div>
+
+      <!-- STEP 5: Generálás -->
+      <div class="step open" id="step5">
+        <div class="step-header" onclick="toggleStep('step5')">
+          <div class="step-num">5</div>
+          <div>
+            <div class="step-title">Excel generálása</div>
+            <div class="step-desc">Új havi fül létrehozása és letöltés</div>
+          </div>
+        </div>
+        <div class="step-body">
+          <button class="generate-btn" onclick="generateExcel()" id="genBtn">
+            ⬇ Elszámolás generálása és letöltés
+          </button>
+          <div class="status-bar" id="statusBar"></div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  renderExtraList();
+}
+
+function toggleStep(id) {
+  const step = document.getElementById(id);
+  step.classList.toggle('open');
+}
+
+function selectMonth(idx, btn) {
+  document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function getSelectedMonth() {
+  const btns = document.querySelectorAll('.month-btn');
+  for (let i = 0; i < btns.length; i++) {
+    if (btns[i].classList.contains('active')) return i;
+  }
+  return new Date().getMonth();
+}
+
+// ─── EXCEL UPLOAD ─────────────────────────────────────────────────────────────
+function handleExcelUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    excelFiles[selectedApt.id] = {
+      data: ev.target.result,
+      name: file.name
+    };
+    saveState('excelFiles', excelFiles);
+    renderSidebar();
+    renderMain();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─── PAYOUT PARSER ────────────────────────────────────────────────────────────
+function parseBooking(text) {
+  const results = [];
+  const rateMatches = [...text.matchAll(/Currency conversion rate\s*([\d.]+)/g)];
+  const netHufMatches = [...text.matchAll(/Net payout\s*HUF\s*([\d,]+)/g)];
+  const guestMatches = [...text.matchAll(/(\d{7,12})\s*Reservation\s*([^\n\t]+?)\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)\s+(\d{4})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)\s+(\d{4})[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)/g)];
+
+  for (let i = 0; i < guestMatches.length; i++) {
+    const m = guestMatches[i];
+    const netEur = parseFloat(m[12].replace(',',''));
+    const rate = rateMatches[i] ? parseFloat(rateMatches[i][1]) : null;
+    const huf = netHufMatches[i] ? parseInt(netHufMatches[i][1].replace(/,/g,'')) : null;
+    results.push({
+      platform: 'Booking',
+      guest: m[2].trim(),
+      checkIn: `${m[5]}. ${m[3].toLowerCase()}. ${m[4]}.`,
+      checkOut: `${m[8]}. ${m[6].toLowerCase()}. ${m[7]}.`,
+      eur: netEur,
+      rate: rate,
+      huf: huf
+    });
+  }
+  return results;
+}
+
+function parseAirbnb(text) {
+  const results = [];
+  if (!text.trim()) return results;
+
+  const parseDate = (monthStr, dayStr, yr) => {
+    const mo = {jan:'jan',feb:'feb',mar:'már',apr:'ápr',may:'máj',jun:'jún',
+                 jul:'júl',aug:'aug',sep:'szep',oct:'okt',nov:'nov',dec:'dec'};
+    const key = monthStr.toLowerCase().substring(0,3);
+    return `${yr}. ${mo[key] || key}. ${dayStr}.`;
+  };
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Find block starts: line matching "€X.XX" or "Ft X,XXX" 
+  // followed by a line starting with "Sent" or a month name
+  const blockStarts = [];
+  for (let i = 0; i < lines.length; i++) {
+    const isAmount = /^(Ft\s+[\d,]+(\.\d+)?|€[\d,.]+|€\s+[\d,.]+)$/.test(lines[i]);
+    const nextLine = lines[i+1] || '';
+    const nextOk = /^(Sent|Arriving|January|February|March|April|May|June|July|August|September|October|November|December)/i.test(nextLine);
+    if (isAmount && nextOk) blockStarts.push(i);
+  }
+
+  // Fallback: find by "Home・" lines
+  if (blockStarts.length === 0) {
+    for (let i = 1; i < lines.length; i++) {
+      if (/[・•]/.test(lines[i])) {
+        // Guest name is the closest non-junk line before this
+        for (let j = i-1; j >= Math.max(0, i-5); j--) {
+          if (lines[j] && !/^(Ft|€|Sent|Arriving|\d)/.test(lines[j]) &&
+              !/^(January|February|March|April|May|June|July|August|September|October|November|December)/i.test(lines[j])) {
+            blockStarts.push(j);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  for (let b = 0; b < blockStarts.length; b++) {
+    const start = blockStarts[b];
+    const end = b + 1 < blockStarts.length ? blockStarts[b+1] : lines.length;
+    const block = lines.slice(start, end);
+
+    // Payout amount (first line)
+    let huf = null, rate = null;
+    const hufMatch = block[0].match(/^Ft\s+([\d,]+)/);
+    const eurPayMatch = block[0].match(/^€\s*([\d,.]+)/);
+    if (hufMatch) huf = parseInt(hufMatch[1].replace(/,/g,''));
+
+    // Guest name: line just before "Home・" or "Home•"
+    let guest = '', checkIn = '', checkOut = '', year = String(new Date().getFullYear());
+    for (let i = 0; i < block.length; i++) {
+      if (/[・•]/.test(block[i])) {
+        // Scan backwards for guest name
+        for (let j = i-1; j >= 0; j--) {
+          const v = block[j];
+          if (!v) continue;
+          if (/^(Ft|€|Sent|Arriving|Pending)/i.test(v)) continue;
+          if (/^(January|February|March|April|May|June|July|August|September|October|November|December)/i.test(v)) continue;
+          if (v.length < 3) continue;
+          guest = v;
+          break;
+        }
+
+        // Parse date from line like "Home・Feb 6 – 8, 2026" or "Home・Feb 14 – Mar 2, 2026"
+        const dm = block[i].match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d+)\s*[–\-]\s*(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+)?(\d+),?\s*(\d{4})/i);
+        if (dm) {
+          year = dm[5];
+          checkIn = parseDate(dm[1], dm[2], year);
+          checkOut = parseDate(dm[3] || dm[1], dm[4], year);
+        }
+        break;
+      }
+    }
+
+    // Total (EUR)
+    let totalEur = null;
+    const totalIdx = block.findIndex(l => /Total\s*\(EUR\)/i.test(l));
+    if (totalIdx >= 0) {
+      for (let j = totalIdx+1; j < Math.min(totalIdx+3, block.length); j++) {
+        const m = block[j].match(/^€\s*([\d,.]+)/);
+        if (m) { totalEur = parseFloat(m[1].replace(',','')); break; }
+      }
+    }
+
+    if (huf && totalEur) rate = Math.round((huf / totalEur) * 100) / 100;
+
+    if (guest && totalEur) {
+      results.push({
+        guest, checkIn, checkOut,
+        eur: totalEur, rate, huf,
+        platform: 'Airbnb',
+        currency: huf ? 'HUF' : 'EUR'
+      });
+    }
+  }
+  return results;
+}
+
+function parsePayout() {
+  const bookingText = document.getElementById('payoutText').value;
+  const airbnbText = document.getElementById('airbnbText').value;
+  
+  if (!bookingText.trim() && !airbnbText.trim()) { 
+    showStatus('Kérlek illeszd be legalább az egyik payout szöveget!', 'error'); 
+    return; 
+  }
+
+  const bookingResults = bookingText.trim() ? parseBooking(bookingText) : [];
+  const airbnbResults = airbnbText.trim() ? parseAirbnb(airbnbText) : [];
+  const results = [...bookingResults, ...airbnbResults];
+
+  if (results.length === 0) {
+    showStatus('Nem sikerült foglalásokat találni. Ellenőrizd a beillesztett szöveget.', 'error');
+    return;
+  }
+
+  currentParsed = results;
+  renderParsedPreview();
+}
+
+function renderParsedPreview() {
+  const el = document.getElementById('parsedPreview');
+  if (currentParsed.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+
+  const bookingCount = currentParsed.filter(r => r.platform === 'Booking').length;
+  const airbnbCount = currentParsed.filter(r => r.platform === 'Airbnb').length;
+
+  el.innerHTML = `
+    <div style="margin-top:16px;font-size:11px;color:var(--success);font-family:'DM Mono',monospace;margin-bottom:8px">
+      ✓ ${currentParsed.length} foglalás azonosítva
+      ${bookingCount ? `<span style="color:var(--accent)"> · ${bookingCount} Booking</span>` : ''}
+      ${airbnbCount ? `<span style="color:#ff6b35"> · ${airbnbCount} Airbnb</span>` : ''}
+    </div>
+    <table class="parsed-table">
+      <thead>
+        <tr>
+          <th>Forrás</th>
+          <th>Vendég</th>
+          <th>Check-in</th>
+          <th>Check-out</th>
+          <th>Nettó EUR</th>
+          <th>Árfolyam</th>
+          <th>HUF (számlán)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${currentParsed.map((r, i) => `
+          <tr>
+            <td style="color:${r.platform === 'Airbnb' ? '#ff6b35' : 'var(--accent)'}; font-family:'DM Mono',monospace; font-size:11px">${r.platform}</td>
+            <td>${r.guest}</td>
+            <td>${r.checkIn}</td>
+            <td>${r.checkOut}</td>
+            <td class="eur">€ ${r.eur}</td>
+            <td class="num">${r.rate || (r.platform === 'Airbnb' ? '<span style="color:var(--text2)">—</span>' : '<span style="color:var(--danger)">?</span>')}</td>
+            <td class="num">${r.huf ? r.huf.toLocaleString('hu') + ' HUF' : (r.platform === 'Airbnb' && r.currency === 'EUR' ? '<span style="color:var(--text2)">EUR kif.</span>' : '<span style="color:var(--danger)">?</span>')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--text2)">
+      💡 Airbnb: ha HUF-ban utalt, az árfolyam automatikusan számítódik. Ha EUR-ban utalt, a HUF oszlopban "EUR kif." jelenik meg.
+    </div>
+  `;
+}
+
+// ─── EXTRA COSTS ──────────────────────────────────────────────────────────────
+function addExtraRow() {
+  extraCosts.push({ desc: '', amount: '' });
+  renderExtraList();
+}
+
+function removeExtra(i) {
+  extraCosts.splice(i, 1);
+  renderExtraList();
+}
+
+function renderExtraList() {
+  const el = document.getElementById('extraList');
+  if (!el) return;
+  if (extraCosts.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Nincs egyéb kiadás</div>';
+    return;
+  }
+  el.innerHTML = extraCosts.map((c, i) => `
+    <div class="extra-row">
+      <input class="input-field wide" placeholder="Leírás (pl. törölköző)" 
+             value="${c.desc}" onchange="extraCosts[${i}].desc=this.value" />
+      <input class="input-field" style="width:120px" placeholder="HUF összeg" type="number"
+             value="${c.amount}" onchange="extraCosts[${i}].amount=this.value" />
+      <button class="remove-btn" onclick="removeExtra(${i})">×</button>
+    </div>
+  `).join('');
+}
+
+// ─── SABLON FELISMERÉS ────────────────────────────────────────────────────────
+
+// Detect all apartment blocks in a sheet
+// Returns array of {name, headerRow, dataStart, dataEnd, cols}
+function detectBlocks(templateData) {
+  const blocks = [];
+  
+  for (let r = 0; r < templateData.length; r++) {
+    const row = templateData[r] || [];
+    const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
+    
+    // Standard header row: has "check in" AND "check out"  
+    if (rowStr.includes('check in') && rowStr.includes('check out')) {
+      const cols = { platform:-1, guest:-1, checkIn:-1, checkOut:-1, invoice:-1, eur:-1, huf:-1 };
+      for (let c = 0; c < row.length; c++) {
+        const v = String(row[c] || '').toLowerCase().trim();
+        if (v.includes('felület') || v.includes('платформа')) cols.platform = c;
+        if (v.includes('bérlő') || v.includes('бронировка')) cols.guest = c;
+        if (v === 'check in') cols.checkIn = c;
+        if (v === 'check out') cols.checkOut = c;
+        if (v.includes('számla') || v.includes('пришло')) cols.invoice = c;
+        if (v.includes('eu bevétel') || v.includes('eu доход') || v === 'eu bevétel') cols.eur = c;
+        if ((v.includes('huf') && (v.includes('bevét') || v.includes('доход'))) || v === 'huf bevét') cols.huf = c;
+        // Margit/Serena offset: platform col[1], guest col[2] etc
+        if (v.includes('eu bevétel') || v === 'eu bevétel') cols.eur = c;
+        if (v.includes('huf forint') || v.includes('huf bevét')) cols.huf = c;
+        if (v.includes('számlára')) cols.invoice = c;
+      }
+
+      // If platform not found at col 0, it might be offset (Margit style: col 0 empty)
+      if (cols.platform < 0 && cols.guest >= 0) {
+        cols.platform = cols.guest - 1; // platform is one col left of guest
+      }
+      
+      // Find actual data start: skip blank rows after header
+      let dataStart = r + 1;
+      while (dataStart < templateData.length) {
+        const testRow = templateData[dataStart] || [];
+        const allEmpty = testRow.every(c => !c || String(c).trim() === '');
+        if (!allEmpty) break;
+        dataStart++;
+      }
+
+      // Find end of data block (SUMMA / Всего row)
+      let dataEnd = templateData.length;
+      for (let rr = dataStart; rr < templateData.length; rr++) {
+        const rowData = templateData[rr] || [];
+        const anyCell = rowData.map(c => String(c||'').toLowerCase()).join('|');
+        if (anyCell.includes('summa') || anyCell.includes('всего')) {
+          dataEnd = rr;
+          break;
+        }
+      }
+      
+      // Get block name from rows above header
+      let blockName = '';
+      for (let rr = r - 1; rr >= Math.max(0, r - 5); rr--) {
+        const nameRow = templateData[rr] || [];
+        for (const cell of nameRow) {
+          const v = String(cell || '').trim();
+          if (v && v.length > 2 && !v.match(/^\d/) && 
+              !v.toLowerCase().match(/takarítás|management|ifa|egyéb|уборка|bevételek|kiadások|доходы|расходы/)) {
+            blockName = v;
+            break;
+          }
+        }
+        if (blockName) break;
+      }
+      
+      blocks.push({ type: 'STANDARD', name: blockName, headerRow: r, dataStart, dataEnd, cols });
+    }
+  }
+  
+  // ASBOTH style: no check in/out columns, data starts from row with booking/airbnb
+  // EUR col0, platform col1, guest+date col2, invoice col3
+  if (blocks.length === 0) {
+    const firstBookingRow = templateData.findIndex(row => 
+      String((row || [])[1] || '').toLowerCase().match(/^booking$|^airbnb$/)
+    );
+    if (firstBookingRow >= 0) {
+      // Find each sub-block by looking for "bevétel forintban" or similar summary lines
+      let dataStart = firstBookingRow;
+      while (dataStart < templateData.length) {
+        let dataEnd = templateData.length;
+        let blockName = '';
+        // Get block name from rows above
+        for (let rr = dataStart - 1; rr >= Math.max(0, dataStart - 3); rr--) {
+          const nameRow = templateData[rr] || [];
+          for (const cell of nameRow) {
+            const v = String(cell || '').trim();
+            if (v && v.length > 2 && !v.match(/^\d/) && 
+                !v.toLowerCase().match(/takarítás|management|ifa|ténylegesen|bevétel|nettó|árfolyam/)) {
+              blockName = v; break;
+            }
+          }
+          if (blockName) break;
+        }
+        // Find end
+        for (let rr = dataStart + 1; rr < templateData.length; rr++) {
+          const v = String((templateData[rr] || [])[0] || '').toLowerCase();
+          if (v.includes('bevétel') || v.includes('összesen') || v.includes('management') || v.includes('nettó')) {
+            dataEnd = rr; break;
+          }
+        }
+        blocks.push({
+          type: 'ASBOTH', name: blockName, headerRow: -1, dataStart, dataEnd,
+          cols: { platform: 1, guest: 2, invoice: 3, eur: 0, huf: 3 }
+        });
+        // Find next block
+        let nextStart = -1;
+        for (let rr = dataEnd + 1; rr < templateData.length; rr++) {
+          if (String((templateData[rr] || [])[1] || '').toLowerCase().match(/^booking$|^airbnb$/)) {
+            nextStart = rr; break;
+          }
+        }
+        if (nextStart < 0) break;
+        dataStart = nextStart;
+      }
+    }
+  }
+
+  // NEFELEJCS style: row number | platform | guest+date | HUF | EUR
+  if (blocks.length === 0) {
+    for (let r = 0; r < templateData.length; r++) {
+      const row = templateData[r] || [];
+      if (String(row[1] || '') === '1' && String(row[2] || '').toLowerCase().match(/booking|airbnb/)) {
+        let dataEnd = templateData.length;
+        for (let rr = r; rr < templateData.length; rr++) {
+          const v = String((templateData[rr] || [])[1] || '').toLowerCase();
+          if (v.includes('всего') || v.includes('összesen')) { dataEnd = rr; break; }
+        }
+        let blockName = '';
+        for (let rr = r - 1; rr >= Math.max(0, r - 3); rr--) {
+          for (const cell of (templateData[rr] || [])) {
+            const v = String(cell || '').trim();
+            if (v && v.length > 2 && !v.toLowerCase().match(/доход|уборка|huf|eur/)) { blockName = v; break; }
+          }
+          if (blockName) break;
+        }
+        blocks.push({
+          type: 'NEFELEJCS', name: blockName, headerRow: r - 1, dataStart: r, dataEnd,
+          cols: { rowNum: 1, platform: 2, guest: 3, invoice: 4, eur: 5 }
+        });
+        // Find next block
+        let nextStart = -1;
+        for (let rr = dataEnd + 1; rr < templateData.length; rr++) {
+          if (String((templateData[rr] || [])[1] || '') === '1') { nextStart = rr; break; }
+        }
+        if (nextStart < 0) break;
+        r = nextStart - 1;
+      }
+    }
+  }
+
+  return blocks;
+}
+
+// ─── EXCEL GENERATION ─────────────────────────────────────────────────────────
+async function generateExcel() {
+  if (!excelFiles[selectedApt.id]) {
+    showStatus('Előbb töltsd fel az Excel sablont (1. lépés)!', 'error'); return;
+  }
+  if (currentParsed.length === 0) {
+    showStatus('Előbb dolgozd fel a payout adatokat (3. lépés)!', 'error'); return;
+  }
+
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generálás folyamatban...';
+  showStatus('Excel feldolgozása...', 'info');
+
+  try {
+    const month = getSelectedMonth();
+    const year = parseInt(document.getElementById('yearInput').value);
+    const monthName = MONTHS_HU[month];
+    const fileData = excelFiles[selectedApt.id];
+
+    const base64 = fileData.data.split(',')[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const workbook = XLSX.read(bytes, { type: 'array', cellStyles: true });
+    const sheets = workbook.SheetNames;
+
+    // Find best template sheet (most recent non-summary)
+    let templateSheetName = sheets[sheets.length - 1];
+    for (let i = sheets.length - 1; i >= 0; i--) {
+      const n = sheets[i].toLowerCase();
+      if (!n.includes('год') && !n.includes('összes') && !n.includes('munka') && n !== 'sheet1') {
+        templateSheetName = sheets[i];
+        break;
+      }
+    }
+    const templateSheet = workbook.Sheets[templateSheetName];
+    // Use raw=true and keep blank rows so row indices match Excel 1-to-1
+    const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null, blankrows: true });
+
+    // Detect all blocks in the template
+    const blocks = detectBlocks(templateData);
+    console.log('Detected blocks:', blocks.map(b => `${b.type}:${b.name}(R${b.dataStart}-${b.dataEnd})`));
+
+    // Deep copy template sheet (preserves ALL formatting/formulas)
+    const newSheet = JSON.parse(JSON.stringify(templateSheet));
+
+    // Helper functions
+    const setCellVal = (r, c, val) => {
+      if (r < 0 || c < 0) return;
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!newSheet[addr]) newSheet[addr] = { t: typeof val === 'number' ? 'n' : 's' };
+      newSheet[addr].v = val;
+      newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
+      // Clear formula so value is used
+      delete newSheet[addr].f;
+    };
+
+    const clearDataCell = (r, c) => {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (newSheet[addr]) {
+        newSheet[addr].v = '';
+        newSheet[addr].t = 's';
+        delete newSheet[addr].f;
+      }
+    };
+
+    // Filter bookings for selected month
+    const monthFilter = currentParsed.filter(b => {
+      const ciLower = (b.checkIn || '').toLowerCase();
+      const monthEN = MONTHS_EN[month].toLowerCase();
+      const monthHU = monthName.toLowerCase().substring(0, 3);
+      return ciLower.includes(monthEN) || ciLower.includes(monthHU) || ciLower.includes(String(year));
+    });
+    const bookingsToUse = monthFilter.length > 0 ? monthFilter : currentParsed;
+
+    // If multiple blocks, ask user which block to fill
+    // For now: if only 1 block, fill it. If multiple, fill all (sorted by name)
+    // TODO: per-unit selection
+    const targetBlocks = blocks.length === 1 ? blocks : blocks;
+
+    for (const block of targetBlocks) {
+      const cols = block.cols;
+      
+      // Determine which bookings go to this block
+      // If only 1 block, all bookings. If multiple, try matching by unit name
+      let blockBookings = bookingsToUse;
+      if (blocks.length > 1 && block.name) {
+        const nameLower = block.name.toLowerCase();
+        // Filter by apartment note matching block name
+        const aptNotes = (selectedApt.notes || '').toLowerCase().split(',').map(s => s.trim());
+        const matchIdx = aptNotes.findIndex(n => nameLower.includes(n) || n.includes(nameLower.split(' ')[0]));
+        if (matchIdx >= 0) {
+          // Can't split bookings automatically - fill all in first block, leave others for manual
+          blockBookings = targetBlocks.indexOf(block) === 0 ? bookingsToUse : [];
+        }
+      }
+
+      // Clear existing data rows in this block
+      // Get max column count from template to know how many cols to clear
+      const maxCol = Math.max(...templateData.slice(block.dataStart, block.dataEnd).map(r => (r||[]).length));
+      for (let i = 0; i < block.dataEnd - block.dataStart; i++) {
+        const r = block.dataStart + i;
+        // Clear all columns that had data (platform, guest, checkIn, checkOut, invoice, eur, huf + neighbors)
+        for (let c = 0; c <= Math.max(maxCol, 12); c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          if (newSheet[addr] && newSheet[addr].v !== undefined) {
+            // Only clear value cells, keep formula structure but clear value
+            const cell = newSheet[addr];
+            // Skip cells that are part of summary formulas
+            if (!cell.f) {
+              cell.v = '';
+              cell.t = 's';
+            }
+          }
+        }
+      }
+
+      // Write new data
+      for (let i = 0; i < blockBookings.length; i++) {
+        const r = block.dataStart + i;
+        const b = blockBookings[i];
+        const platformStr = b.platform === 'Airbnb' ? 'Airbnb' : 'booking';
+
+        if (block.type === 'STANDARD') {
+          if (cols.platform >= 0) setCellVal(r, cols.platform, platformStr);
+          if (cols.guest >= 0) setCellVal(r, cols.guest, b.guest);
+          if (cols.checkIn >= 0) setCellVal(r, cols.checkIn, b.checkIn);
+          if (cols.checkOut >= 0) setCellVal(r, cols.checkOut, b.checkOut);
+          if (cols.invoice >= 0 && b.huf) setCellVal(r, cols.invoice, b.huf);
+          if (cols.eur >= 0) setCellVal(r, cols.eur, b.eur);
+          if (cols.huf >= 0 && b.huf) setCellVal(r, cols.huf, b.huf);
+
+        } else if (block.type === 'ASBOTH') {
+          // EUR | platform | "guest	check-in	check-out" | HUF invoice
+          setCellVal(r, 0, b.eur);
+          setCellVal(r, 1, platformStr);
+          setCellVal(r, 2, `${b.guest}	${b.checkIn}	${b.checkOut}`);
+          if (b.huf) setCellVal(r, 3, b.huf);
+
+        } else if (block.type === 'NEFELEJCS') {
+          // empty | rownum | platform | "guest	check-in	check-out" | HUF | EUR
+          setCellVal(r, cols.rowNum, i + 1);
+          setCellVal(r, cols.platform, platformStr);
+          setCellVal(r, cols.guest, `${b.guest}	${b.checkIn}	${b.checkOut}`);
+          if (b.huf) setCellVal(r, cols.invoice, b.huf);
+          setCellVal(r, cols.eur, b.eur);
+        }
+      }
+    }
+
+    // Extra costs
+    for (let r = 0; r < templateData.length; r++) {
+      const row = templateData[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        const v = String(row[c] || '').toLowerCase();
+        if (v.includes('egyéb kiadás') || v.includes('egyéb nem terv')) {
+          if (extraCosts.length > 0) {
+            const total = extraCosts.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+            setCellVal(r, c + 1, total);
+          }
+        }
+      }
+    }
+
+    // Create new sheet name
+    let newSheetName;
+    const aptShort = (selectedApt.notes || selectedApt.name).split(',')[0].trim().substring(0, 12);
+    if (templateSheetName.match(/Квартиры|Денис/)) {
+      const m = String(month + 1).padStart(2, '0');
+      newSheetName = templateSheetName.replace(/\d{2}\.\d{4}/, `${m}.${year}`).substring(0, 31);
+    } else if (templateSheetName.match(/\d{4}\.\d{2}/)) {
+      newSheetName = `${year}.${String(month + 1).padStart(2, '0')}`.substring(0, 31);
+    } else {
+      newSheetName = `${monthName}i elsz ${year} ${aptShort}`.substring(0, 31);
+    }
+
+    // Avoid duplicate sheet names
+    let finalName = newSheetName;
+    let suffix = 2;
+    while (workbook.SheetNames.includes(finalName)) {
+      finalName = `${newSheetName.substring(0, 28)} ${suffix++}`;
+    }
+
+    workbook.SheetNames.push(finalName);
+    workbook.Sheets[finalName] = newSheet;
+
+    // Export
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedApt.name}_${year}_${monthName}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    const blockInfo = blocks.map(b => b.name || b.type).join(', ');
+    showStatus(`✓ "${finalName}" fül létrehozva! (${blocks.length} blokk: ${blockInfo})`, 'info');
+    btn.textContent = '✓ Letöltve!';
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '⬇ Elszámolás generálása és letöltés';
+    }, 3000);
+
+  } catch (err) {
+    console.error(err);
+    showStatus('Hiba: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '⬇ Elszámolás generálása és letöltés';
+  }
+}
+
+function showStatus(msg, type) {
+  const bar = document.getElementById('statusBar');
+  if (!bar) return;
+  bar.textContent = msg;
+  bar.className = `status-bar ${type} show`;
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+renderSidebar();
+
+// Keyboard shortcut for modal
+document.getElementById('newAptOwner').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('newAptNotes').focus();
+});
+</script>
+</body>
+</html>
