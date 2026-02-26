@@ -696,16 +696,11 @@ function handleBulkUpload(e) {
         const sheetData = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null, blankrows: true });
         const validation = validateExcel(sheetData);
         if (!validation.valid) {
-          validationErrors.push(`❌ ${file.name}: ${validation.reason}`);
-          processed++;
-          if (processed === files.length) finalizeBulkUpload(e, newAptIds, validationErrors);
-          return;
+          // Warn but still allow — don't block upload
+          validationErrors.push(`⚠ ${file.name}: ${validation.reason}`);
         }
       } catch(err) {
-        validationErrors.push(`❌ ${file.name}: Nem sikerült megnyitni a fájlt.`);
-        processed++;
-        if (processed === files.length) finalizeBulkUpload(e, newAptIds, validationErrors);
-        return;
+        validationErrors.push(`⚠ ${file.name}: Nem sikerült ellenőrizni a fájlt (${err.message})`);
       }
 
       const id = `${Date.now()}_${idx}_${Math.random().toString(36).substr(2,5)}`;
