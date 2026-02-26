@@ -640,7 +640,7 @@ function validateExcel(data) {
   // data = array of rows from sheet_to_json
   if (!data || data.length < 3) return { valid: false, reason: 'A fájl túl kevés sort tartalmaz.' };
 
-const allText = data.map(r => (r||[]).map(c => String(c||'').toLowerCase()).join('|')).join('\n');
+  const allText = data.map(r => (r||[]).map(c => String(c||'').toLowerCase()).join('|')).join('\n');
 
   // Check for known patterns
   const hasCheckIn = allText.includes('check in');
@@ -1389,24 +1389,21 @@ async function generateExcel() {
       if (block.type === 'STANDARD') {
         const cols = block.cols;
 
-        // Meghatározzuk melyik oszlopokban van képlet és melyikben input
-        // Az első néhány adatsor alapján
+        // Képlet oszlopok és árfolyam oszlop detektálása a TEMPLATE sheet alapján
+        // (nem a newSheet-ből, mert ott ugyanúgy tárolódnak)
         const formulaCols = new Set();
-        const inputCols = new Set();
+        let rateCol = -1;
+
         for (let ri = block.dataStart; ri < Math.min(block.dataStart + 5, block.dataEnd); ri++) {
           for (let c = 0; c < 30; c++) {
-            const cell = newSheet[XLSX.utils.encode_cell({ r: ri, c })];
-            if (cell) {
-              if (cell.f) formulaCols.add(c);
-              else if (cell.v !== undefined && cell.v !== null && cell.v !== '') inputCols.add(c);
-            }
+            const cell = templateSheet[XLSX.utils.encode_cell({ r: ri, c })];
+            if (cell && cell.f) formulaCols.add(c);
           }
         }
 
-        // Árfolyam oszlop keresése fejléc alapján
-        let rateCol = -1;
+        // Árfolyam oszlop: fejléc alapján
         for (let c = 0; c < 30; c++) {
-          const cell = newSheet[XLSX.utils.encode_cell({ r: block.headerRow, c })];
+          const cell = templateSheet[XLSX.utils.encode_cell({ r: block.headerRow, c })];
           if (cell && cell.v) {
             const v = String(cell.v).toLowerCase();
             if (v.includes('euro') || v.includes('árfolyam') || v.includes('курс') || v.includes('közép')) {
@@ -1415,21 +1412,32 @@ async function generateExcel() {
           }
         }
 
+        // Input oszlopok = a header sorban névvel rendelkező, NEM képlet oszlopok
+        const inputCols = new Set();
+        for (let c = 0; c < 30; c++) {
+          if (formulaCols.has(c)) continue;
+          const headerCell = templateSheet[XLSX.utils.encode_cell({ r: block.headerRow, c })];
+          if (headerCell && headerCell.v) inputCols.add(c);
+        }
+        // Mindig hozzáadjuk az alap input oszlopokat
+        [cols.platform, cols.guest, cols.checkIn, cols.checkOut, cols.invoice, cols.eur, rateCol]
+          .filter(c => c >= 0 && !formulaCols.has(c))
+          .forEach(c => inputCols.add(c));
+
         console.log(`  inputCols=[${[...inputCols]}] formulaCols=[${[...formulaCols]}] rateCol=${rateCol}`);
 
-        // Input cellák törlése az adatsorokban (képleteket NEM bántjuk)
+        // Input cellák törlése (képleteket NEM bántjuk)
         for (let ri = block.dataStart; ri < block.dataEnd; ri++) {
           inputCols.forEach(c => {
-            if (formulaCols.has(c)) return; // képlet — nem bántjuk
             const addr = XLSX.utils.encode_cell({ r: ri, c });
-            if (newSheet[addr]) {
+            if (newSheet[addr] && !newSheet[addr].f) {
               newSheet[addr].v = '';
               newSheet[addr].t = 's';
             }
           });
         }
 
-        // Foglalások beírása — csak input cellákba, képleteket soha nem írjuk felül
+        // Foglalások beírása
         for (let i = 0; i < blockBookings.length; i++) {
           const r = block.dataStart + i;
           if (r >= block.dataEnd) break;
@@ -1441,7 +1449,7 @@ async function generateExcel() {
             if (!newSheet[addr]) newSheet[addr] = {};
             newSheet[addr].v = val;
             newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
-            delete newSheet[addr].f; // input celláknál töröljük a képletet
+            delete newSheet[addr].f;
           };
 
           setVal(cols.platform, b.platform === 'Airbnb' ? 'Airbnb' : 'booking');
@@ -1450,7 +1458,6 @@ async function generateExcel() {
           if (cols.checkOut >= 0) setVal(cols.checkOut, b.checkOut);
           if (cols.invoice >= 0 && b.huf) setVal(cols.invoice, b.huf);
           if (cols.eur >= 0) setVal(cols.eur, b.eur);
-          // Árfolyam: csak ha van (Booking HUF kifizetésnél igen, Airbnb EUR-nál nem)
           if (rateCol >= 0 && b.rate) setVal(rateCol, b.rate);
         }
 
