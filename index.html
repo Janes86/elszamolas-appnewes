@@ -635,22 +635,81 @@ function selectApt(id) {
 // ─── MODAL ───────────────────────────────────────────────────────────────────
 let pendingAptId = null;
 
+// ─── EXCEL VALIDÁCIÓ ─────────────────────────────────────────────────────────
+function validateExcel(data) {
+  // data = array of rows from sheet_to_json
+  if (!data || data.length < 3) return { valid: false, reason: 'A fájl túl kevés sort tartalmaz.' };
+
+  const allText = data.map(r => (r||[]).map(c => String(c||'').toLowerCase()).join('|')).join('
+');
+
+  // Check for known patterns
+  const hasCheckIn = allText.includes('check in');
+  const hasCheckOut = allText.includes('check out');
+  const hasGuest = allText.includes('bérlő') || allText.includes('бронировка');
+  const hasPlatform = allText.includes('felület') || allText.includes('платформа') || allText.includes('booking') || allText.includes('airbnb');
+  const hasRevenue = allText.includes('bevétel') || allText.includes('доход') || allText.includes('huf');
+  const hasAsboth = data.some(r => String((r||[])[1]||'').toLowerCase().match(/^booking$|^airbnb$/));
+  const hasNefelejcs = data.some((r,i) => String((r||[])[1]||'') === '1' && String((r||[])[2]||'').toLowerCase().includes('booking'));
+
+  if ((hasCheckIn && hasCheckOut && hasPlatform) || hasAsboth || hasNefelejcs) {
+    return { valid: true };
+  }
+
+  if (hasRevenue && hasPlatform) {
+    return { valid: true }; // Partial match, allow
+  }
+
+  return { 
+    valid: false, 
+    reason: 'Nem ismerhető fel apartman elszámolási sablon. Ellenőrizd hogy a megfelelő fájlt töltötted-e fel.'
+  };
+}
+
 // Bulk upload - multiple files at once
 function handleBulkUpload(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
 
   const newAptIds = [];
+  const validationErrors = [];
   let processed = 0;
 
   files.forEach((file, idx) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
-      // Unique ID: timestamp + index + random to avoid collisions
+      // Validate Excel structure before accepting
+      try {
+        const base64 = ev.target.result.split(',')[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const wb = XLSX.read(bytes, { type: 'array' });
+        // Check last non-summary sheet
+        let sheetName = wb.SheetNames[wb.SheetNames.length - 1];
+        for (let i = wb.SheetNames.length - 1; i >= 0; i--) {
+          const n = wb.SheetNames[i].toLowerCase();
+          if (!n.includes('год') && !n.includes('összes') && !n.includes('munka') && n !== 'sheet1') {
+            sheetName = wb.SheetNames[i]; break;
+          }
+        }
+        const sheetData = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null, blankrows: true });
+        const validation = validateExcel(sheetData);
+        if (!validation.valid) {
+          validationErrors.push(`❌ ${file.name}: ${validation.reason}`);
+          processed++;
+          if (processed === files.length) finalizeBulkUpload(e, newAptIds, validationErrors);
+          return;
+        }
+      } catch(err) {
+        validationErrors.push(`❌ ${file.name}: Nem sikerült megnyitni a fájlt.`);
+        processed++;
+        if (processed === files.length) finalizeBulkUpload(e, newAptIds, validationErrors);
+        return;
+      }
+
       const id = `${Date.now()}_${idx}_${Math.random().toString(36).substr(2,5)}`;
       const name = file.name.replace(/\.[^.]+$/, '');
-
-      // Check if already exists by name
       const exists = apartments.find(a => a.name === name);
       if (exists) {
         excelFiles[exists.id] = { data: ev.target.result, name: file.name };
@@ -662,25 +721,33 @@ function handleBulkUpload(e) {
       }
 
       processed++;
-      if (processed === files.length) {
-        saveState('apartments', apartments);
-        saveState('excelFiles', excelFiles);
-        // Select the first newly added apt
-        if (newAptIds.length > 0) {
-          selectedApt = apartments.find(a => a.id === newAptIds[0]);
-          pendingAptId = newAptIds[0];
-        }
-        renderSidebar();
-        renderMain();
-        // Show modal only if new apts were added
-        if (newAptIds.length > 0) {
-          showEditModal(newAptIds[0], files.length);
-        }
-        e.target.value = '';
-      }
+      if (processed === files.length) finalizeBulkUpload(e, newAptIds, validationErrors);
     };
     reader.readAsDataURL(file);
   });
+}
+
+function finalizeBulkUpload(e, newAptIds, errors) {
+  saveState('apartments', apartments);
+  saveState('excelFiles', excelFiles);
+  if (newAptIds.length > 0) {
+    selectedApt = apartments.find(a => a.id === newAptIds[0]);
+    pendingAptId = newAptIds[0];
+  }
+  renderSidebar();
+  renderMain();
+  if (errors.length > 0) {
+    // Show validation errors
+    const errMsg = errors.join('\n');
+    showStatus(errMsg, 'error');
+    // Also show modal if some valid files were uploaded
+    if (newAptIds.length > 0) {
+      setTimeout(() => showEditModal(newAptIds[0], newAptIds.length), 500);
+    }
+  } else if (newAptIds.length > 0) {
+    showEditModal(newAptIds[0], newAptIds.length);
+  }
+  e.target.value = '';
 }
 
 function showEditModal(aptId, count) {
@@ -1130,14 +1197,32 @@ function detectBlocks(templateData) {
         if (v.includes('számla') || v.includes('пришло')) cols.invoice = c;
         if (v.includes('eu bevétel') || v.includes('eu доход') || v === 'eu bevétel') cols.eur = c;
         if ((v.includes('huf') && (v.includes('bevét') || v.includes('доход'))) || v === 'huf bevét') cols.huf = c;
+        // Margit/Serena offset: platform col[1], guest col[2] etc
+        if (v.includes('eu bevétel') || v === 'eu bevétel') cols.eur = c;
+        if (v.includes('huf forint') || v.includes('huf bevét')) cols.huf = c;
+        if (v.includes('számlára')) cols.invoice = c;
+      }
+
+      // If platform not found at col 0, it might be offset (Margit style: col 0 empty)
+      if (cols.platform < 0 && cols.guest >= 0) {
+        cols.platform = cols.guest - 1; // platform is one col left of guest
       }
       
+      // Find actual data start: skip blank rows after header
+      let dataStart = r + 1;
+      while (dataStart < templateData.length) {
+        const testRow = templateData[dataStart] || [];
+        const allEmpty = testRow.every(c => !c || String(c).trim() === '');
+        if (!allEmpty) break;
+        dataStart++;
+      }
+
       // Find end of data block (SUMMA / Всего row)
       let dataEnd = templateData.length;
-      for (let rr = r + 1; rr < templateData.length; rr++) {
-        const rv = String((templateData[rr] || [])[cols.platform >= 0 ? cols.platform : 0] || '').toLowerCase();
-        const rv1 = String((templateData[rr] || [])[0] || '').toLowerCase();
-        if (rv.includes('summa') || rv.includes('всего') || rv1.includes('summa') || rv1.includes('всего')) {
+      for (let rr = dataStart; rr < templateData.length; rr++) {
+        const rowData = templateData[rr] || [];
+        const anyCell = rowData.map(c => String(c||'').toLowerCase()).join('|');
+        if (anyCell.includes('summa') || anyCell.includes('всего')) {
           dataEnd = rr;
           break;
         }
@@ -1150,7 +1235,7 @@ function detectBlocks(templateData) {
         for (const cell of nameRow) {
           const v = String(cell || '').trim();
           if (v && v.length > 2 && !v.match(/^\d/) && 
-              !v.toLowerCase().match(/takarítás|management|ifa|egyéb|уборка|^\d+\.\d+$/)) {
+              !v.toLowerCase().match(/takarítás|management|ifa|egyéb|уборка|bevételek|kiadások|доходы|расходы/)) {
             blockName = v;
             break;
           }
@@ -1158,7 +1243,7 @@ function detectBlocks(templateData) {
         if (blockName) break;
       }
       
-      blocks.push({ type: 'STANDARD', name: blockName, headerRow: r, dataStart: r + 1, dataEnd, cols });
+      blocks.push({ type: 'STANDARD', name: blockName, headerRow: r, dataStart, dataEnd, cols });
     }
   }
   
@@ -1284,7 +1369,8 @@ async function generateExcel() {
       }
     }
     const templateSheet = workbook.Sheets[templateSheetName];
-    const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null });
+    // Use raw=true and keep blank rows so row indices match Excel 1-to-1
+    const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null, blankrows: true });
 
     // Detect all blocks in the template
     const blocks = detectBlocks(templateData);
@@ -1345,13 +1431,23 @@ async function generateExcel() {
       }
 
       // Clear existing data rows in this block
-      const maxClear = block.dataEnd - block.dataStart + 2;
-      for (let i = 0; i < maxClear; i++) {
+      // Get max column count from template to know how many cols to clear
+      const maxCol = Math.max(...templateData.slice(block.dataStart, block.dataEnd).map(r => (r||[]).length));
+      for (let i = 0; i < block.dataEnd - block.dataStart; i++) {
         const r = block.dataStart + i;
-        if (r >= block.dataEnd) break;
-        const dataCols = [cols.platform, cols.guest, cols.checkIn, cols.checkOut, cols.invoice, cols.eur, cols.huf].filter(c => c >= 0);
-        dataCols.forEach(c => clearDataCell(r, c));
-        if (block.type === 'NEFELEJCS') clearDataCell(r, cols.rowNum);
+        // Clear all columns that had data (platform, guest, checkIn, checkOut, invoice, eur, huf + neighbors)
+        for (let c = 0; c <= Math.max(maxCol, 12); c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          if (newSheet[addr] && newSheet[addr].v !== undefined) {
+            // Only clear value cells, keep formula structure but clear value
+            const cell = newSheet[addr];
+            // Skip cells that are part of summary formulas
+            if (!cell.f) {
+              cell.v = '';
+              cell.t = 's';
+            }
+          }
+        }
       }
 
       // Write new data
