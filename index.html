@@ -640,7 +640,7 @@ function validateExcel(data) {
   // data = array of rows from sheet_to_json
   if (!data || data.length < 3) return { valid: false, reason: 'A fájl túl kevés sort tartalmaz.' };
 
-  const allText = data.map(r => (r||[]).map(c => String(c||'').toLowerCase()).join('|')).join('\n');
+const allText = data.map(r => (r||[]).map(c => String(c||'').toLowerCase()).join('|')).join('\n');
 
   // Check for known patterns
   const hasCheckIn = allText.includes('check in');
