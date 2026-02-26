@@ -1358,181 +1358,186 @@ async function generateExcel() {
     for (let i = sheets.length - 1; i >= 0; i--) {
       const n = sheets[i].toLowerCase();
       if (!n.includes('год') && !n.includes('összes') && !n.includes('munka') && n !== 'sheet1') {
-        templateSheetName = sheets[i];
-        break;
+        templateSheetName = sheets[i]; break;
       }
     }
     const templateSheet = workbook.Sheets[templateSheetName];
-    // Use raw=true and keep blank rows so row indices match Excel 1-to-1
+    // blankrows:true — üres sorok megmaradnak, indexek pontosan egyeznek az Excel sorokkal
     const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null, blankrows: true });
 
-    // Detect all blocks in the template
+    // Detect blocks
     const blocks = detectBlocks(templateData);
-    console.log('Detected blocks:', blocks.map(b => `${b.type}:${b.name}(R${b.dataStart}-${b.dataEnd})`));
+    console.log('Blocks:', blocks.map(b => `${b.type}:${b.name} R${b.dataStart+1}-${b.dataEnd+1}`));
 
-    // Deep copy template sheet (preserves ALL formatting/formulas)
+    // Deep copy — megőrzi az összes formázást, képletet, stílust
     const newSheet = JSON.parse(JSON.stringify(templateSheet));
-
-    // Helper functions
-    const setCellVal = (r, c, val) => {
-      if (r < 0 || c < 0) return;
-      const addr = XLSX.utils.encode_cell({ r, c });
-      if (!newSheet[addr]) newSheet[addr] = { t: typeof val === 'number' ? 'n' : 's' };
-      newSheet[addr].v = val;
-      newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
-      // Clear formula so value is used
-      delete newSheet[addr].f;
-    };
-
-    const clearDataCell = (r, c) => {
-      const addr = XLSX.utils.encode_cell({ r, c });
-      if (newSheet[addr]) {
-        newSheet[addr].v = '';
-        newSheet[addr].t = 's';
-        delete newSheet[addr].f;
-      }
-    };
 
     // Filter bookings for selected month
     const monthFilter = currentParsed.filter(b => {
-      const ciLower = (b.checkIn || '').toLowerCase();
-      const monthEN = MONTHS_EN[month].toLowerCase();
-      const monthHU = monthName.toLowerCase().substring(0, 3);
-      return ciLower.includes(monthEN) || ciLower.includes(monthHU) || ciLower.includes(String(year));
+      const ci = (b.checkIn || '').toLowerCase();
+      return ci.includes(MONTHS_EN[month].toLowerCase()) ||
+             ci.includes(monthName.toLowerCase().substring(0, 3)) ||
+             ci.includes(String(year));
     });
     const bookingsToUse = monthFilter.length > 0 ? monthFilter : currentParsed;
 
-    // If multiple blocks, ask user which block to fill
-    // For now: if only 1 block, fill it. If multiple, fill all (sorted by name)
-    // TODO: per-unit selection
-    const targetBlocks = blocks.length === 1 ? blocks : blocks;
+    // Process each block
+    for (const block of blocks) {
+      // Multi-block sheets: csak az első blokkba írunk automatikusan
+      const blockBookings = (blocks.length > 1 && blocks.indexOf(block) > 0) ? [] : bookingsToUse;
 
-    for (const block of targetBlocks) {
-      const cols = block.cols;
-      
-      // Determine which bookings go to this block
-      // If only 1 block, all bookings. If multiple, try matching by unit name
-      let blockBookings = bookingsToUse;
-      if (blocks.length > 1 && block.name) {
-        const nameLower = block.name.toLowerCase();
-        // Filter by apartment note matching block name
-        const aptNotes = (selectedApt.notes || '').toLowerCase().split(',').map(s => s.trim());
-        const matchIdx = aptNotes.findIndex(n => nameLower.includes(n) || n.includes(nameLower.split(' ')[0]));
-        if (matchIdx >= 0) {
-          // Can't split bookings automatically - fill all in first block, leave others for manual
-          blockBookings = targetBlocks.indexOf(block) === 0 ? bookingsToUse : [];
+      if (block.type === 'STANDARD') {
+        const cols = block.cols;
+
+        // Meghatározzuk melyik oszlopokban van képlet és melyikben input
+        // Az első néhány adatsor alapján
+        const formulaCols = new Set();
+        const inputCols = new Set();
+        for (let ri = block.dataStart; ri < Math.min(block.dataStart + 5, block.dataEnd); ri++) {
+          for (let c = 0; c < 30; c++) {
+            const cell = newSheet[XLSX.utils.encode_cell({ r: ri, c })];
+            if (cell) {
+              if (cell.f) formulaCols.add(c);
+              else if (cell.v !== undefined && cell.v !== null && cell.v !== '') inputCols.add(c);
+            }
+          }
         }
-      }
 
-      // Find which columns have formulas (don't overwrite these!)
-      const formulaCols = new Set();
-      const inputCols = new Set();
-      for (let i = 0; i < block.dataEnd - block.dataStart; i++) {
-        const r = block.dataStart + i;
+        // Árfolyam oszlop keresése fejléc alapján
+        let rateCol = -1;
         for (let c = 0; c < 30; c++) {
-          const addr = XLSX.utils.encode_cell({ r, c });
-          if (newSheet[addr]) {
-            if (newSheet[addr].f) formulaCols.add(c);
-            else if (newSheet[addr].v !== undefined && newSheet[addr].v !== '') inputCols.add(c);
+          const cell = newSheet[XLSX.utils.encode_cell({ r: block.headerRow, c })];
+          if (cell && cell.v) {
+            const v = String(cell.v).toLowerCase();
+            if (v.includes('euro') || v.includes('árfolyam') || v.includes('курс') || v.includes('közép')) {
+              rateCol = c;
+            }
           }
         }
-      }
 
-      // Find EURO közép / exchange rate column (referenced in formulas like *O9)
-      let rateCol = -1;
-      for (let c = 0; c < 30; c++) {
-        const headerAddr = XLSX.utils.encode_cell({ r: block.headerRow, c });
-        const hCell = newSheet[headerAddr];
-        if (hCell) {
-          const v = String(hCell.v || '').toLowerCase();
-          if (v.includes('euro') || v.includes('árfolyam') || v.includes('курс') || v.includes('közép')) {
-            rateCol = c;
-          }
+        console.log(`  inputCols=[${[...inputCols]}] formulaCols=[${[...formulaCols]}] rateCol=${rateCol}`);
+
+        // Input cellák törlése az adatsorokban (képleteket NEM bántjuk)
+        for (let ri = block.dataStart; ri < block.dataEnd; ri++) {
+          inputCols.forEach(c => {
+            if (formulaCols.has(c)) return; // képlet — nem bántjuk
+            const addr = XLSX.utils.encode_cell({ r: ri, c });
+            if (newSheet[addr]) {
+              newSheet[addr].v = '';
+              newSheet[addr].t = 's';
+            }
+          });
         }
-      }
 
-      // Clear only input columns (not formula columns) in data rows
-      for (let i = 0; i < block.dataEnd - block.dataStart; i++) {
-        const r = block.dataStart + i;
-        inputCols.forEach(c => {
-          if (!formulaCols.has(c)) {
+        // Foglalások beírása — csak input cellákba, képleteket soha nem írjuk felül
+        for (let i = 0; i < blockBookings.length; i++) {
+          const r = block.dataStart + i;
+          if (r >= block.dataEnd) break;
+          const b = blockBookings[i];
+
+          const setVal = (c, val) => {
+            if (c < 0 || formulaCols.has(c)) return;
             const addr = XLSX.utils.encode_cell({ r, c });
-            if (newSheet[addr]) { newSheet[addr].v = ''; newSheet[addr].t = 's'; }
-          }
-        });
-      }
+            if (!newSheet[addr]) newSheet[addr] = {};
+            newSheet[addr].v = val;
+            newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
+            delete newSheet[addr].f; // input celláknál töröljük a képletet
+          };
 
-      // Write new data — only input cells, never formula cells
-      for (let i = 0; i < blockBookings.length; i++) {
-        const r = block.dataStart + i;
-        const b = blockBookings[i];
-        const platformStr = b.platform === 'Airbnb' ? 'Airbnb' : 'booking';
+          setVal(cols.platform, b.platform === 'Airbnb' ? 'Airbnb' : 'booking');
+          setVal(cols.guest, b.guest);
+          if (cols.checkIn >= 0) setVal(cols.checkIn, b.checkIn);
+          if (cols.checkOut >= 0) setVal(cols.checkOut, b.checkOut);
+          if (cols.invoice >= 0 && b.huf) setVal(cols.invoice, b.huf);
+          if (cols.eur >= 0) setVal(cols.eur, b.eur);
+          // Árfolyam: csak ha van (Booking HUF kifizetésnél igen, Airbnb EUR-nál nem)
+          if (rateCol >= 0 && b.rate) setVal(rateCol, b.rate);
+        }
 
-        if (block.type === 'STANDARD') {
-          if (cols.platform >= 0 && !formulaCols.has(cols.platform)) setCellVal(r, cols.platform, platformStr);
-          if (cols.guest >= 0 && !formulaCols.has(cols.guest)) setCellVal(r, cols.guest, b.guest);
-          if (cols.checkIn >= 0 && !formulaCols.has(cols.checkIn)) setCellVal(r, cols.checkIn, b.checkIn);
-          if (cols.checkOut >= 0 && !formulaCols.has(cols.checkOut)) setCellVal(r, cols.checkOut, b.checkOut);
-          if (cols.invoice >= 0 && !formulaCols.has(cols.invoice) && b.huf) setCellVal(r, cols.invoice, b.huf);
-          if (cols.eur >= 0 && !formulaCols.has(cols.eur)) setCellVal(r, cols.eur, b.eur);
-          // Write exchange rate if available
-          if (rateCol >= 0 && b.rate) setCellVal(r, rateCol, b.rate);
+      } else if (block.type === 'ASBOTH') {
+        // Asbóth: col0=EUR, col1=platform, col2=guest+dátum egy cellában, col3=HUF
+        for (let ri = block.dataStart; ri < block.dataEnd; ri++) {
+          [0,1,2,3].forEach(c => {
+            const addr = XLSX.utils.encode_cell({ r: ri, c });
+            if (newSheet[addr] && !newSheet[addr].f) { newSheet[addr].v = ''; newSheet[addr].t = 's'; }
+          });
+        }
+        for (let i = 0; i < blockBookings.length; i++) {
+          const r = block.dataStart + i;
+          if (r >= block.dataEnd) break;
+          const b = blockBookings[i];
+          const setV = (c, v) => {
+            const addr = XLSX.utils.encode_cell({ r, c });
+            if (!newSheet[addr]) newSheet[addr] = {};
+            newSheet[addr].v = v; newSheet[addr].t = typeof v === 'number' ? 'n' : 's';
+          };
+          setV(0, b.eur);
+          setV(1, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
+          setV(2, `${b.guest}\t${b.checkIn}\t${b.checkOut}`);
+          if (b.huf) setV(3, b.huf);
+        }
 
-        } else if (block.type === 'ASBOTH') {
-          // EUR | platform | "guest	check-in	check-out" | HUF invoice
-          setCellVal(r, 0, b.eur);
-          setCellVal(r, 1, platformStr);
-          setCellVal(r, 2, `${b.guest}	${b.checkIn}	${b.checkOut}`);
-          if (b.huf) setCellVal(r, 3, b.huf);
-
-        } else if (block.type === 'NEFELEJCS') {
-          // empty | rownum | platform | "guest	check-in	check-out" | HUF | EUR
-          setCellVal(r, cols.rowNum, i + 1);
-          setCellVal(r, cols.platform, platformStr);
-          setCellVal(r, cols.guest, `${b.guest}	${b.checkIn}	${b.checkOut}`);
-          if (b.huf) setCellVal(r, cols.invoice, b.huf);
-          setCellVal(r, cols.eur, b.eur);
+      } else if (block.type === 'NEFELEJCS') {
+        const cols = block.cols;
+        for (let ri = block.dataStart; ri < block.dataEnd; ri++) {
+          [1,2,3,4,5].forEach(c => {
+            const addr = XLSX.utils.encode_cell({ r: ri, c });
+            if (newSheet[addr] && !newSheet[addr].f) { newSheet[addr].v = ''; newSheet[addr].t = 's'; }
+          });
+        }
+        for (let i = 0; i < blockBookings.length; i++) {
+          const r = block.dataStart + i;
+          if (r >= block.dataEnd) break;
+          const b = blockBookings[i];
+          const setV = (c, v) => {
+            const addr = XLSX.utils.encode_cell({ r, c });
+            if (!newSheet[addr]) newSheet[addr] = {};
+            newSheet[addr].v = v; newSheet[addr].t = typeof v === 'number' ? 'n' : 's';
+          };
+          setV(cols.rowNum, i + 1);
+          setV(cols.platform, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
+          setV(cols.guest, `${b.guest}\t${b.checkIn}\t${b.checkOut}`);
+          if (b.huf) setV(cols.invoice, b.huf);
+          setV(cols.eur, b.eur);
         }
       }
     }
 
-    // Extra costs
+    // Extra kiadások
     for (let r = 0; r < templateData.length; r++) {
-      const row = templateData[r] || [];
-      for (let c = 0; c < row.length; c++) {
-        const v = String(row[c] || '').toLowerCase();
+      for (let c = 0; c < (templateData[r] || []).length; c++) {
+        const v = String((templateData[r] || [])[c] || '').toLowerCase();
         if (v.includes('egyéb kiadás') || v.includes('egyéb nem terv')) {
           if (extraCosts.length > 0) {
             const total = extraCosts.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
-            setCellVal(r, c + 1, total);
+            const addr = XLSX.utils.encode_cell({ r, c: c + 1 });
+            if (!newSheet[addr]) newSheet[addr] = {};
+            newSheet[addr].v = total; newSheet[addr].t = 'n';
           }
         }
       }
     }
 
-    // Create new sheet name
+    // Új fül neve
     let newSheetName;
     const aptShort = (selectedApt.notes || selectedApt.name).split(',')[0].trim().substring(0, 12);
     if (templateSheetName.match(/Квартиры|Денис/)) {
       const m = String(month + 1).padStart(2, '0');
       newSheetName = templateSheetName.replace(/\d{2}\.\d{4}/, `${m}.${year}`).substring(0, 31);
     } else if (templateSheetName.match(/\d{4}\.\d{2}/)) {
-      newSheetName = `${year}.${String(month + 1).padStart(2, '0')}`.substring(0, 31);
+      newSheetName = `${year}.${String(month + 1).padStart(2, '0')}`;
     } else {
       newSheetName = `${monthName}i elsz ${year} ${aptShort}`.substring(0, 31);
     }
-
-    // Avoid duplicate sheet names
     let finalName = newSheetName;
     let suffix = 2;
     while (workbook.SheetNames.includes(finalName)) {
-      finalName = `${newSheetName.substring(0, 28)} ${suffix++}`;
+      finalName = `${newSheetName.substring(0, 27)}_${suffix++}`;
     }
 
     workbook.SheetNames.push(finalName);
     workbook.Sheets[finalName] = newSheet;
 
-    // Export
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
@@ -1542,13 +1547,9 @@ async function generateExcel() {
     a.click();
     URL.revokeObjectURL(url);
 
-    const blockInfo = blocks.map(b => b.name || b.type).join(', ');
-    showStatus(`✓ "${finalName}" fül létrehozva! (${blocks.length} blokk: ${blockInfo})`, 'info');
+    showStatus(`✓ "${finalName}" fül létrehozva és letöltve!`, 'info');
     btn.textContent = '✓ Letöltve!';
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = '⬇ Elszámolás generálása és letöltés';
-    }, 3000);
+    setTimeout(() => { btn.disabled = false; btn.textContent = '⬇ Elszámolás generálása és letöltés'; }, 3000);
 
   } catch (err) {
     console.error(err);
