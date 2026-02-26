@@ -553,7 +553,10 @@
     <span class="sidebar-label">Lakások excel táblázatai</span>
     <div id="aptList"></div>
     <div class="sidebar-section">
-      <button class="add-apt-btn" onclick="showAddModal()">+ Excel feltöltése</button>
+      <div style="position:relative">
+        <button class="add-apt-btn" onclick="document.getElementById('bulkUpload').click()">+ Excel(ek) feltöltése</button>
+        <input type="file" id="bulkUpload" accept=".xlsx,.xls" multiple style="display:none" onchange="handleBulkUpload(event)" />
+      </div>
     </div>
   </div>
 
@@ -570,21 +573,15 @@
 <!-- ADD APARTMENT MODAL -->
 <div class="modal-overlay" id="addModal">
   <div class="modal" style="width:440px">
-    <h3>Excel feltöltése</h3>
-    <div class="upload-zone" id="modalExcelZone" style="margin-bottom:16px">
-      <input type="file" accept=".xlsx,.xls" onchange="handleModalExcelUpload(event)" />
-      <div class="upload-icon">📊</div>
-      <div class="upload-text">Húzd ide vagy <strong>kattints a feltöltéshez</strong></div>
-      <div style="font-size:11px;color:var(--text2);margin-top:4px">.xlsx fájl</div>
-    </div>
-    <div id="modalFileBadge" style="display:none;margin-bottom:12px"></div>
+    <h3>Adatok megadása</h3>
+    <div id="modalFileBadge" style="margin-bottom:12px"></div>
     <label class="field-label">Tulajdonos neve</label>
     <input class="input-field" style="width:100%" id="newAptOwner" placeholder="pl. Kiss János" />
     <label class="field-label">Megjegyzés (opcionális)</label>
     <input class="input-field" style="width:100%" id="newAptNotes" placeholder="pl. Asbóth, Mária, Somogyi" />
     <div class="modal-btns">
       <button class="btn-ghost" onclick="hideAddModal()">Mégse</button>
-      <button class="btn-primary" onclick="addApartment()">Hozzáadás</button>
+      <button class="btn-primary" onclick="addApartment()">Mentés</button>
     </div>
   </div>
 </div>
@@ -636,58 +633,91 @@ function selectApt(id) {
 }
 
 // ─── MODAL ───────────────────────────────────────────────────────────────────
-let modalExcelFile = null;
+let pendingAptId = null;
+
+// Bulk upload - multiple files at once
+function handleBulkUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+
+  let processed = 0;
+  files.forEach((file, idx) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const id = (Date.now() + idx).toString();
+      const name = file.name.replace(/\.[^.]+$/, '');
+
+      // Check if already exists
+      const exists = apartments.find(a => a.name === name);
+      if (exists) {
+        // Just update the file
+        excelFiles[exists.id] = { data: ev.target.result, name: file.name };
+      } else {
+        const apt = { id, name, owner: '', notes: '' };
+        apartments.push(apt);
+        excelFiles[id] = { data: ev.target.result, name: file.name };
+        if (idx === 0) pendingAptId = id;
+      }
+
+      processed++;
+      if (processed === files.length) {
+        saveState('apartments', apartments);
+        saveState('excelFiles', excelFiles);
+        renderSidebar();
+        // Show modal to add owner/notes for the last uploaded
+        if (pendingAptId || files.length > 0) {
+          showEditModal(pendingAptId || apartments[apartments.length - 1].id, files.length);
+        }
+        e.target.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function showEditModal(aptId, count) {
+  const apt = apartments.find(a => a.id === aptId);
+  if (!apt) return;
+  pendingAptId = aptId;
+  document.getElementById('addModal').classList.add('show');
+  document.getElementById('newAptOwner').value = apt.owner || '';
+  document.getElementById('newAptNotes').value = apt.notes || '';
+  const badge = document.getElementById('modalFileBadge');
+  badge.innerHTML = count > 1
+    ? `<div class="file-badge">✓ ${count} Excel fájl feltöltve</div>`
+    : `<div class="file-badge">✓ ${apt.name}</div>`;
+  setTimeout(() => document.getElementById('newAptOwner').focus(), 100);
+}
 
 function showAddModal() {
-  modalExcelFile = null;
-  document.getElementById('addModal').classList.add('show');
-  document.getElementById('newAptOwner').value = '';
-  document.getElementById('newAptNotes').value = '';
-  document.getElementById('modalFileBadge').style.display = 'none';
-  document.getElementById('modalExcelZone').style.display = 'block';
-  setTimeout(() => document.getElementById('newAptOwner').focus(), 100);
+  // Trigger file upload directly
+  document.getElementById('bulkUpload').click();
 }
 
 function hideAddModal() {
   document.getElementById('addModal').classList.remove('show');
-  modalExcelFile = null;
-}
-
-function handleModalExcelUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    modalExcelFile = { data: ev.target.result, name: file.name };
-    document.getElementById('modalFileBadge').style.display = 'block';
-    document.getElementById('modalFileBadge').innerHTML = `<div class="file-badge">✓ ${file.name}</div>`;
-  };
-  reader.readAsDataURL(file);
+  pendingAptId = null;
 }
 
 function addApartment() {
   const owner = document.getElementById('newAptOwner').value.trim();
   const notes = document.getElementById('newAptNotes').value.trim();
-  if (!modalExcelFile && !owner) return;
 
-  const apt = {
-    id: Date.now().toString(),
-    name: modalExcelFile ? modalExcelFile.name.replace(/\.[^.]+$/, '') : owner,
-    owner: owner,
-    notes: notes
-  };
-
-  apartments.push(apt);
-  saveState('apartments', apartments);
-
-  if (modalExcelFile) {
-    excelFiles[apt.id] = { data: modalExcelFile.data, name: modalExcelFile.name };
-    saveState('excelFiles', excelFiles);
+  if (pendingAptId) {
+    // Update existing apt
+    const apt = apartments.find(a => a.id === pendingAptId);
+    if (apt) { apt.owner = owner; apt.notes = notes; }
+  } else {
+    if (!owner) return;
+    const apt = { id: Date.now().toString(), name: owner, owner, notes };
+    apartments.push(apt);
   }
 
+  saveState('apartments', apartments);
   hideAddModal();
   renderSidebar();
-  selectApt(apt.id);
+  if (pendingAptId) selectApt(pendingAptId);
+  else selectApt(apartments[apartments.length - 1].id);
 }
 
 // (duplicate removed)
@@ -755,11 +785,19 @@ function renderMain() {
           </div>
         </div>
         <div class="step-body">
-          <label class="field-label">Payout szöveg (copy-paste a Booking.com-ról)</label>
+          <label class="field-label">Booking.com payout szöveg</label>
           <textarea class="payout-textarea" id="payoutText" 
-            placeholder="Feb 5 2026&#10;Jan 29 - Feb 4&#10;0Bltd9f3TZvA4Rya&#10;PDF/CSV&#10;SentHUF 142,715&#10;Booking reference number...&#10;&#10;Másold be a teljes payout szöveget ide..."></textarea>
-          <div class="warning-note">💡 A Booking.com admin → Pénzügyek → Kifizetések oldalról másold ki az adott hónaphoz tartozó összes kifizetést</div>
-          <button class="parse-btn" onclick="parsePayout()">▶ Feldolgozás</button>
+            placeholder="Feb 5 2026&#10;Jan 29 - Feb 4&#10;0Bltd9f3TZvA4Rya&#10;PDF/CSV&#10;SentHUF 142,715&#10;Booking reference number...&#10;&#10;Másold be a teljes Booking.com payout szöveget ide..."></textarea>
+          <div class="warning-note">💡 Booking.com admin → Pénzügyek → Kifizetések oldalról másold ki</div>
+          
+          <div class="divider"></div>
+          
+          <label class="field-label">Airbnb payout szöveg</label>
+          <textarea class="payout-textarea" id="airbnbText" 
+            placeholder="Másold be az Airbnb payout / tranzakció szöveget ide...&#10;&#10;pl.:&#10;Vendég neve&#10;Bejelentkezés: 2026. jan. 5.&#10;Kijelentkezés: 2026. jan. 9.&#10;Kifizetés: 85,94 USD / EUR&#10;..."></textarea>
+          <div class="warning-note">💡 Airbnb → Fizetések → Tranzakciók oldalról másold ki — vagy töltsd fel a CSV exportot</div>
+          
+          <button class="parse-btn" onclick="parsePayout()">▶ Mindkettő feldolgozása</button>
           <div id="parsedPreview"></div>
         </div>
       </div>
@@ -838,44 +876,128 @@ function handleExcelUpload(e) {
 }
 
 // ─── PAYOUT PARSER ────────────────────────────────────────────────────────────
-function parsePayout() {
-  const text = document.getElementById('payoutText').value;
-  if (!text.trim()) { showStatus('Kérlek illeszd be a payout szöveget!', 'error'); return; }
-
+function parseBooking(text) {
   const results = [];
-
-  // Extract HUF payouts with currency conversion rate
-  // Pattern: find blocks with guest name, check-in/out, net EUR, HUF total, rate
   const rateMatches = [...text.matchAll(/Currency conversion rate\s*([\d.]+)/g)];
   const netHufMatches = [...text.matchAll(/Net payout\s*HUF\s*([\d,]+)/g)];
   const guestMatches = [...text.matchAll(/(\d{7,12})\s*Reservation\s*([^\n\t]+?)\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)\s+(\d{4})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)\s+(\d{4})[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)[^€]*€\s*([\d,.-]+)/g)];
 
-  // Also parse HUF sent amounts per payout block  
-  const sentHufMatches = [...text.matchAll(/Sent\s*HUF\s*([\d,]+)/g)];
-
-  if (guestMatches.length === 0) {
-    // Try simpler pattern
-    showStatus('Nem sikerült foglalásokat találni. Ellenőrizd hogy a teljes payout szöveget illesztetted-e be.', 'error');
-    return;
-  }
-
   for (let i = 0; i < guestMatches.length; i++) {
     const m = guestMatches[i];
-    const guestName = m[2].trim();
-    const checkInMonth = m[3], checkInDay = m[4], checkInYear = m[5];
-    const checkOutMonth = m[6], checkOutDay = m[7], checkOutYear = m[8];
     const netEur = parseFloat(m[12].replace(',',''));
     const rate = rateMatches[i] ? parseFloat(rateMatches[i][1]) : null;
     const huf = netHufMatches[i] ? parseInt(netHufMatches[i][1].replace(/,/g,'')) : null;
-
     results.push({
-      guest: guestName,
-      checkIn: `${checkInYear}. ${checkInMonth.toLowerCase()}. ${checkInDay}.`,
-      checkOut: `${checkOutYear}. ${checkOutMonth.toLowerCase()}. ${checkOutDay}.`,
+      platform: 'Booking',
+      guest: m[2].trim(),
+      checkIn: `${m[5]}. ${m[3].toLowerCase()}. ${m[4]}.`,
+      checkOut: `${m[8]}. ${m[6].toLowerCase()}. ${m[7]}.`,
       eur: netEur,
       rate: rate,
       huf: huf
     });
+  }
+  return results;
+}
+
+function parseAirbnb(text) {
+  const results = [];
+  if (!text.trim()) return results;
+
+  // Try CSV format first (Airbnb transaction export)
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  
+  // Detect CSV: has commas and header row
+  if (text.includes(',') && (text.toLowerCase().includes('confirmation') || text.toLowerCase().includes('payout') || text.toLowerCase().includes('guest'))) {
+    // Parse CSV-like airbnb export
+    const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
+    const guestIdx = headers.findIndex(h => h.includes('guest') || h.includes('vendég'));
+    const startIdx = headers.findIndex(h => h.includes('start') || h.includes('check') || h.includes('bejelentkezés'));
+    const endIdx = headers.findIndex(h => h.includes('end') || h.includes('checkout') || h.includes('kijelentkezés'));
+    const amountIdx = headers.findIndex(h => h.includes('amount') || h.includes('payout') || h.includes('összeg'));
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.replace(/"/g,'').trim());
+      if (cols.length < 3) continue;
+      const guest = guestIdx >= 0 ? cols[guestIdx] : '';
+      const checkIn = startIdx >= 0 ? cols[startIdx] : '';
+      const checkOut = endIdx >= 0 ? cols[endIdx] : '';
+      const amountRaw = amountIdx >= 0 ? cols[amountIdx] : '';
+      const amount = parseFloat(amountRaw.replace(/[^0-9.-]/g,''));
+      if (!guest && !amount) continue;
+      results.push({
+        platform: 'airbnb',
+        guest: guest,
+        checkIn: checkIn,
+        checkOut: checkOut,
+        eur: isNaN(amount) ? null : amount,
+        rate: null,
+        huf: null
+      });
+    }
+    return results;
+  }
+
+  // Free text format - look for guest + date patterns
+  // Pattern: name followed by dates and amount
+  const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
+  
+  for (const block of blocks) {
+    const lines2 = block.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    // Look for date patterns: "jan. 5–9." or "2026. jan. 5." style
+    const datePattern = /(\d{4}\.)?\s*(jan|feb|már|ápr|máj|jún|júl|aug|szep|okt|nov|dec)\.?\s*(\d+)[.–-]+(\d+)?/gi;
+    const amountPattern = /([\d,.]+)\s*(EUR|USD|€|\$|HUF)/gi;
+    
+    const dateMatches = [...block.matchAll(datePattern)];
+    const amountMatches = [...block.matchAll(amountPattern)];
+    
+    if (dateMatches.length === 0 && amountMatches.length === 0) continue;
+    
+    // First non-empty line is likely the guest name
+    const guestLine = lines2[0];
+    const amount = amountMatches.length > 0 ? parseFloat(amountMatches[0][1].replace(',','.')) : null;
+    
+    // Extract check-in/out from date pattern
+    let checkIn = '', checkOut = '';
+    if (dateMatches.length > 0) {
+      const dm = dateMatches[0];
+      checkIn = `${dm[1] || '2026'} ${dm[2]}. ${dm[3]}.`;
+      checkOut = dm[4] ? `${dm[1] || '2026'} ${dm[2]}. ${dm[4]}.` : '';
+    }
+
+    if (guestLine && (amount || checkIn)) {
+      results.push({
+        platform: 'airbnb',
+        guest: guestLine,
+        checkIn: checkIn,
+        checkOut: checkOut,
+        eur: amount,
+        rate: null,
+        huf: null
+      });
+    }
+  }
+
+  return results;
+}
+
+function parsePayout() {
+  const bookingText = document.getElementById('payoutText').value;
+  const airbnbText = document.getElementById('airbnbText').value;
+  
+  if (!bookingText.trim() && !airbnbText.trim()) { 
+    showStatus('Kérlek illeszd be legalább az egyik payout szöveget!', 'error'); 
+    return; 
+  }
+
+  const bookingResults = bookingText.trim() ? parseBooking(bookingText) : [];
+  const airbnbResults = airbnbText.trim() ? parseAirbnb(airbnbText) : [];
+  const results = [...bookingResults, ...airbnbResults];
+
+  if (results.length === 0) {
+    showStatus('Nem sikerült foglalásokat találni. Ellenőrizd a beillesztett szöveget.', 'error');
+    return;
   }
 
   currentParsed = results;
@@ -889,13 +1011,19 @@ function renderParsedPreview() {
     return;
   }
 
+  const bookingCount = currentParsed.filter(r => r.platform === 'Booking').length;
+  const airbnbCount = currentParsed.filter(r => r.platform === 'Airbnb').length;
+
   el.innerHTML = `
     <div style="margin-top:16px;font-size:11px;color:var(--success);font-family:'DM Mono',monospace;margin-bottom:8px">
       ✓ ${currentParsed.length} foglalás azonosítva
+      ${bookingCount ? `<span style="color:var(--accent)"> · ${bookingCount} Booking</span>` : ''}
+      ${airbnbCount ? `<span style="color:#ff6b35"> · ${airbnbCount} Airbnb</span>` : ''}
     </div>
     <table class="parsed-table">
       <thead>
         <tr>
+          <th>Forrás</th>
           <th>Vendég</th>
           <th>Check-in</th>
           <th>Check-out</th>
@@ -907,18 +1035,19 @@ function renderParsedPreview() {
       <tbody>
         ${currentParsed.map((r, i) => `
           <tr>
+            <td style="color:${r.platform === 'Airbnb' ? '#ff6b35' : 'var(--accent)'}; font-family:'DM Mono',monospace; font-size:11px">${r.platform}</td>
             <td>${r.guest}</td>
             <td>${r.checkIn}</td>
             <td>${r.checkOut}</td>
             <td class="eur">€ ${r.eur}</td>
-            <td class="num">${r.rate || '<span style="color:var(--danger)">?</span>'}</td>
-            <td class="num">${r.huf ? r.huf.toLocaleString('hu') : '<span style="color:var(--danger)">?</span>'}</td>
+            <td class="num">${r.rate || (r.platform === 'Airbnb' ? '<span style="color:var(--text2)">—</span>' : '<span style="color:var(--danger)">?</span>')}</td>
+            <td class="num">${r.huf ? r.huf.toLocaleString('hu') + ' HUF' : (r.platform === 'Airbnb' && r.currency === 'EUR' ? '<span style="color:var(--text2)">EUR kif.</span>' : '<span style="color:var(--danger)">?</span>')}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
     <div style="margin-top:10px;font-size:11px;color:var(--text2)">
-      ✎ Az adatokat az Excel generálás előtt módosíthatod a táblázatban
+      💡 Airbnb: ha HUF-ban utalt, az árfolyam automatikusan számítódik. Ha EUR-ban utalt, a HUF oszlopban "EUR kif." jelenik meg.
     </div>
   `;
 }
@@ -952,13 +1081,103 @@ function renderExtraList() {
   `).join('');
 }
 
+// ─── SABLON FELISMERÉS ────────────────────────────────────────────────────────
+function detectTemplateType(templateData) {
+  // Scan all rows for known patterns
+  for (let r = 0; r < templateData.length; r++) {
+    const row = templateData[r] || [];
+    const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
+
+    // Type A/B/D standard: has separate Check In / Check Out columns
+    if (rowStr.includes('check in') && rowStr.includes('check out')) {
+      // Detect column positions
+      let cols = { platform:-1, guest:-1, checkIn:-1, checkOut:-1, invoice:-1, eur:-1, huf:-1, rate:-1 };
+      for (let c = 0; c < row.length; c++) {
+        const v = String(row[c] || '').toLowerCase();
+        if (v.includes('felület') || v.includes('платформа')) cols.platform = c;
+        if (v.includes('bérlő') || v.includes('бронировка')) cols.guest = c;
+        if (v === 'check in' || v.includes('check in')) cols.checkIn = c;
+        if (v === 'check out' || v.includes('check out')) cols.checkOut = c;
+        if (v.includes('számla') || v.includes('пришло')) cols.invoice = c;
+        if (v.includes('eu bevétel') || v.includes('eu доходы') || v.includes('eu доход')) cols.eur = c;
+        if (v.includes('huf bevét') || v.includes('huf доход') || v.includes('huf') && v.includes('bevét')) cols.huf = c;
+      }
+      return { type: 'STANDARD', headerRow: r, dataStart: r + 1, cols };
+    }
+
+    // Type C: Nefelejcs/Népszínház - Russian, guest+date in one cell, row number col
+    if (rowStr.includes('booking') && rowStr.includes('eur') && 
+        row.some((c,i) => String(c||'') === '1' || String(c||'') === '2')) {
+      let cols = { rowNum:-1, platform:-1, guest:-1, invoice:-1, eur:-1, cleaning:-1 };
+      for (let c = 0; c < row.length; c++) {
+        const v = String(row[c] || '').toLowerCase();
+        if (v === '1') cols.rowNum = c;
+      }
+      // Previous row has headers
+      const hRow = templateData[r-1] || [];
+      for (let c = 0; c < hRow.length; c++) {
+        const v = String(hRow[c] || '').toLowerCase();
+        if (v.includes('доход') || v.includes('huf')) cols.invoice = c;
+        if (v === 'eur') cols.eur = c;
+      }
+      cols.platform = 2; cols.guest = 3; cols.invoice = 4; cols.eur = 5;
+      return { type: 'NEFELEJCS', headerRow: r-1, dataStart: r, cols };
+    }
+
+    // Type D/E: Asbóth / Little Cola - guest+date combined in one cell, no separate checkIn/Out
+    if (rowStr.includes('booking') && !rowStr.includes('check in') &&
+        row.some(c => String(c||'').match(/booking|airbnb/i)) &&
+        r > 0) {
+      // Check if this is a data row (first few rows are data not header)
+      const firstDataRow = templateData.findIndex(rr => 
+        (rr||[]).some(c => String(c||'').match(/^booking$|^airbnb$/i))
+      );
+      if (firstDataRow === r) {
+        // Detect columns by content type
+        let cols = { platform:0, guest:1, invoice:-1, eur:-1, huf:-1 };
+        // Look at first data row to figure out cols
+        for (let c = 0; c < row.length; c++) {
+          const v = String(row[c] || '').toLowerCase();
+          const n = parseFloat(String(row[c]||'').replace(',',''));
+          if (v.includes('eur') && c > 3) cols.eur = c-1; // eur label follows value
+          if (v === 'huf' && c > 3) cols.huf = c-1;
+        }
+        // For Asbóth: col0=EUR, col1=platform, col2=guest+date, col3=HUF invoice, col4=HUF total
+        // For Little Cola: col0=platform, col1=guest+date, col2=invoice, col3=EUR
+        if (String(row[0]||'').match(/^\d+\.\d+$/)) {
+          // Asbóth style: first col is EUR number
+          cols = { platform:1, guest:2, invoice:3, eur:0, huf:3 };
+          return { type: 'ASBOTH', headerRow: -1, dataStart: r, cols };
+        } else {
+          // Little Cola style
+          cols = { platform:0, guest:1, invoice:2, eur:3, huf:5 };
+          return { type: 'LITTLE_COLA', headerRow: -1, dataStart: r, cols };
+        }
+      }
+    }
+  }
+  return { type: 'UNKNOWN', headerRow: -1, dataStart: -1, cols: {} };
+}
+
+function formatDateHU(dateStr) {
+  // Convert various date formats to "2026. jan. 5." style
+  if (!dateStr) return '';
+  const months = {
+    jan:'jan',feb:'feb',mar:'már',apr:'ápr',may:'máj',jun:'jún',
+    jul:'júl',aug:'aug',sep:'szep',oct:'okt',nov:'nov',dec:'dec',
+    'jan.':'jan','feb.':'feb','már.':'már','ápr.':'ápr','máj.':'máj','jún.':'jún',
+    'júl.':'júl','aug.':'aug','szep.':'szep','okt.':'okt','nov.':'nov','dec.':'dec'
+  };
+  return dateStr; // already formatted by parser
+}
+
 // ─── EXCEL GENERATION ─────────────────────────────────────────────────────────
 async function generateExcel() {
   if (!excelFiles[selectedApt.id]) {
     showStatus('Előbb töltsd fel az Excel sablont (1. lépés)!', 'error'); return;
   }
   if (currentParsed.length === 0) {
-    showStatus('Előbb dolgozd fel a Booking.com adatokat (3. lépés)!', 'error'); return;
+    showStatus('Előbb dolgozd fel a payout adatokat (3. lépés)!', 'error'); return;
   }
 
   const btn = document.getElementById('genBtn');
@@ -972,118 +1191,201 @@ async function generateExcel() {
     const monthName = MONTHS_HU[month];
     const fileData = excelFiles[selectedApt.id];
 
-    // Convert base64 to array buffer
     const base64 = fileData.data.split(',')[1];
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
     const workbook = XLSX.read(bytes, { type: 'array', cellStyles: true });
-
-    // Find the most recent sheet to use as template
     const sheets = workbook.SheetNames;
-    const templateSheet = workbook.Sheets[sheets[sheets.length - 1]];
 
-    // Create new sheet name
-    const newSheetName = `${monthName}i elsz ${year} ${selectedApt.name}`.substring(0, 31);
-
-    // Deep copy the template sheet
-    const newSheet = JSON.parse(JSON.stringify(templateSheet));
-
-    // Get template data to understand structure
+    // Find template sheet - use last non-summary sheet
+    let templateSheetName = sheets[sheets.length - 1];
+    // Skip summary sheets (годовой/ГОД/Összes/Munka)
+    for (let i = sheets.length - 1; i >= 0; i--) {
+      const n = sheets[i].toLowerCase();
+      if (!n.includes('год') && !n.includes('összes') && !n.includes('munka') && n !== 'sheet1') {
+        templateSheetName = sheets[i];
+        break;
+      }
+    }
+    const templateSheet = workbook.Sheets[templateSheetName];
     const templateData = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: null });
 
-    // Find booking rows and clear them, then fill with new data
-    // Find header row (contains 'Bérlő' or 'Бронировка' or similar)
-    let headerRow = -1;
-    let dataStartRow = -1;
-    let platformCol = -1;
-    let guestCol = -1;
-    let checkInCol = -1;
-    let checkOutCol = -1;
-    let invoiceCol = -1;
-    let eurCol = -1;
-    let rateCol = -1;
+    // Detect template type
+    const tmpl = detectTemplateType(templateData);
+    console.log('Template type:', tmpl.type, tmpl);
 
-    for (let r = 0; r < templateData.length; r++) {
-      const row = templateData[r];
-      for (let c = 0; c < (row || []).length; c++) {
-        const val = String(row[c] || '').toLowerCase();
-        if (val.includes('bérlő') || val.includes('бронировка')) { headerRow = r; guestCol = c; }
-        if (val.includes('check in') || val === 'check in') checkInCol = c;
-        if (val.includes('check out') || val === 'check out') checkOutCol = c;
-        if (val.includes('felület') || val.includes('платформа')) platformCol = c;
-        if (val.includes('számla') || val.includes('пришло')) invoiceCol = c;
-        if (val.includes('eu bevétel') || val.includes('eu доходы')) eurCol = c;
-        if (val.includes('euro közép') || val.includes('euro укрс')) rateCol = c;
-      }
-      if (headerRow >= 0 && guestCol >= 0) { dataStartRow = r + 1; break; }
+    // Create new sheet name based on template type
+    let newSheetName;
+    const aptShortName = (selectedApt.notes || selectedApt.name).split(',')[0].trim().substring(0, 15);
+    if (tmpl.type === 'NEFELEJCS') {
+      // Russian style: "Денис 01. 2026"
+      const m = String(month + 1).padStart(2, '0');
+      newSheetName = `Денис ${m}. ${year}`.substring(0, 31);
+    } else if (templateSheetName.match(/Квартир/)) {
+      const m = String(month + 1).padStart(2, '0');
+      newSheetName = `Квартиры ${m}.${year}`.substring(0, 31);
+    } else {
+      newSheetName = `${monthName}i elsz ${year} ${aptShortName}`.substring(0, 31);
     }
 
-    // Find extra costs cell
-    let extraCostRow = -1;
-    let extraCostCol = -1;
-    for (let r = 0; r < templateData.length; r++) {
-      const row = templateData[r];
-      for (let c = 0; c < (row || []).length; c++) {
-        const val = String(row[c] || '').toLowerCase();
-        if (val.includes('egyéb kiadás')) { extraCostRow = r; extraCostCol = c + 1; }
-      }
-    }
+    // Deep copy template sheet
+    const newSheet = JSON.parse(JSON.stringify(templateSheet));
 
-    // Filter bookings for selected month (exclude overlapping from prev month based on check-in)
+    // Filter bookings for selected month
     const monthFilter = currentParsed.filter(b => {
-      const ciLower = b.checkIn.toLowerCase();
+      const ciLower = (b.checkIn || '').toLowerCase();
       const monthEN = MONTHS_EN[month].toLowerCase();
       const monthHU = monthName.toLowerCase().substring(0, 3);
-      return ciLower.includes(monthEN) || ciLower.includes(monthHU) || 
-             ciLower.includes(`${year}`);
+      return ciLower.includes(monthEN) || ciLower.includes(monthHU) || ciLower.includes(String(year));
     });
-
     const bookingsToUse = monthFilter.length > 0 ? monthFilter : currentParsed;
 
-    // Clear old data rows and write new ones
-    if (dataStartRow >= 0) {
+    // Helper to set cell value
+    const setCell = (r, c, val, type) => {
+      if (r < 0 || c < 0) return;
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!newSheet[addr]) newSheet[addr] = {};
+      newSheet[addr].v = val;
+      newSheet[addr].t = type || (typeof val === 'number' ? 'n' : 's');
+    };
+
+    const clearCell = (r, c) => {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (newSheet[addr]) { newSheet[addr].v = ''; newSheet[addr].t = 's'; }
+    };
+
+    const cols = tmpl.cols;
+
+    if (tmpl.type === 'STANDARD') {
+      // Standard: clear existing data rows, write new ones
+      // First find how many data rows exist (until SUMMA or empty platform col)
+      let existingDataRows = 0;
+      for (let r = tmpl.dataStart; r < templateData.length; r++) {
+        const row = templateData[r] || [];
+        const platformVal = String(row[cols.platform >= 0 ? cols.platform : 0] || '').toLowerCase();
+        if (platformVal.includes('summa') || platformVal.includes('всего') || platformVal.includes('összesen')) break;
+        if (platformVal.includes('booking') || platformVal.includes('airbnb')) existingDataRows++;
+        else if (existingDataRows > 0) break;
+      }
+
+      // Clear existing data rows
+      const maxRows = Math.max(existingDataRows, bookingsToUse.length) + 5;
+      for (let i = 0; i < maxRows; i++) {
+        const r = tmpl.dataStart + i;
+        [cols.platform, cols.guest, cols.checkIn, cols.checkOut, cols.invoice, cols.eur, cols.huf].forEach(c => {
+          if (c >= 0) clearCell(r, c);
+        });
+      }
+
+      // Write new data
       for (let i = 0; i < bookingsToUse.length; i++) {
-        const r = dataStartRow + i;
+        const r = tmpl.dataStart + i;
         const b = bookingsToUse[i];
+        setCell(r, cols.platform, b.platform === 'Airbnb' ? 'Airbnb' : 'booking');
+        setCell(r, cols.guest, b.guest);
+        if (cols.checkIn >= 0) setCell(r, cols.checkIn, b.checkIn);
+        if (cols.checkOut >= 0) setCell(r, cols.checkOut, b.checkOut);
+        if (cols.invoice >= 0 && b.huf) setCell(r, cols.invoice, b.huf, 'n');
+        if (cols.eur >= 0) setCell(r, cols.eur, b.eur, 'n');
+        if (cols.huf >= 0 && b.huf) setCell(r, cols.huf, b.huf, 'n');
+      }
 
-        const setCell = (col, val) => {
-          if (col < 0) return;
-          const addr = XLSX.utils.encode_cell({ r, c: col });
-          if (!newSheet[addr]) newSheet[addr] = {};
-          newSheet[addr].v = val;
-          newSheet[addr].t = typeof val === 'number' ? 'n' : 's';
-        };
+    } else if (tmpl.type === 'ASBOTH') {
+      // Asbóth style: EUR | platform | guest+date | HUF invoice | HUF total
+      // Clear existing booking rows first
+      for (let i = 0; i < 20; i++) {
+        const r = tmpl.dataStart + i;
+        const row = templateData[r] || [];
+        const platformVal = String(row[1] || '').toLowerCase();
+        if (!platformVal.includes('booking') && !platformVal.includes('airbnb') && i > 0) break;
+        [0,1,2,3,4].forEach(c => clearCell(r, c));
+      }
 
-        if (platformCol >= 0) setCell(platformCol, 'Booking');
-        if (guestCol >= 0) setCell(guestCol, b.guest);
-        if (checkInCol >= 0) setCell(checkInCol, b.checkIn);
-        if (checkOutCol >= 0) setCell(checkOutCol, b.checkOut);
-        if (invoiceCol >= 0 && b.huf) setCell(invoiceCol, b.huf);
-        if (eurCol >= 0) setCell(eurCol, b.eur);
-        if (rateCol >= 0 && b.rate) setCell(rateCol, b.rate);
+      for (let i = 0; i < bookingsToUse.length; i++) {
+        const r = tmpl.dataStart + i;
+        const b = bookingsToUse[i];
+        // Format: "GuestName	2026. jan. 5.	2026. jan. 10."
+        const guestCell = `${b.guest}	${b.checkIn}	${b.checkOut}`;
+        setCell(r, 0, b.eur, 'n');
+        setCell(r, 1, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
+        setCell(r, 2, guestCell);
+        if (b.huf) setCell(r, 3, b.huf, 'n');
+      }
+
+    } else if (tmpl.type === 'LITTLE_COLA') {
+      // Little Cola: platform | guest+date | invoice | EUR
+      for (let i = 0; i < 20; i++) {
+        const r = tmpl.dataStart + i;
+        const row = templateData[r] || [];
+        const platformVal = String(row[0] || '').toLowerCase();
+        if (!platformVal.includes('booking') && !platformVal.includes('airbnb') && i > 0) break;
+        [0,1,2,3].forEach(c => clearCell(r, c));
+      }
+
+      for (let i = 0; i < bookingsToUse.length; i++) {
+        const r = tmpl.dataStart + i;
+        const b = bookingsToUse[i];
+        const guestCell = `${b.guest}	${b.checkIn}	${b.checkOut}`;
+        setCell(r, 0, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
+        setCell(r, 1, guestCell);
+        if (b.huf) setCell(r, 2, b.huf, 'n');
+        setCell(r, 3, b.eur, 'n');
+      }
+
+    } else if (tmpl.type === 'NEFELEJCS') {
+      // Nefelejcs: rownum | platform | guest+date | HUF | EUR
+      for (let i = 0; i < 15; i++) {
+        const r = tmpl.dataStart + i;
+        [0,1,2,3,4,5].forEach(c => clearCell(r, c));
+      }
+
+      for (let i = 0; i < bookingsToUse.length; i++) {
+        const r = tmpl.dataStart + i;
+        const b = bookingsToUse[i];
+        const guestCell = `${b.guest}	${b.checkIn}	${b.checkOut}`;
+        setCell(r, 0, '', 's');
+        setCell(r, 1, i + 1, 'n');
+        setCell(r, 2, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
+        setCell(r, 3, guestCell);
+        if (b.huf) setCell(r, 4, b.huf, 'n');
+        setCell(r, 5, b.eur, 'n');
+      }
+
+    } else {
+      // Unknown - best effort with STANDARD approach
+      showStatus('Ismeretlen sablon — alapértelmezett kitöltés.', 'info');
+      for (let i = 0; i < bookingsToUse.length; i++) {
+        const r = (tmpl.dataStart >= 0 ? tmpl.dataStart : 13) + i;
+        const b = bookingsToUse[i];
+        setCell(r, 0, b.platform === 'Airbnb' ? 'airbnb' : 'booking');
+        setCell(r, 1, b.guest);
+        setCell(r, 2, b.checkIn);
+        setCell(r, 3, b.checkOut);
+        setCell(r, 4, b.huf || '', b.huf ? 'n' : 's');
+        setCell(r, 5, b.eur, 'n');
       }
     }
 
-    // Set extra costs
+    // Extra costs
+    let extraCostRow = -1, extraCostCol = -1;
+    for (let r = 0; r < templateData.length; r++) {
+      const row = templateData[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        const v = String(row[c] || '').toLowerCase();
+        if (v.includes('egyéb kiadás') || v.includes('egyéb nem terv')) { extraCostRow = r; extraCostCol = c + 1; }
+      }
+    }
     if (extraCosts.length > 0 && extraCostRow >= 0) {
       const totalExtra = extraCosts.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
-      const addr = XLSX.utils.encode_cell({ r: extraCostRow, c: extraCostCol });
-      if (!newSheet[addr]) newSheet[addr] = {};
-      newSheet[addr].v = totalExtra;
-      newSheet[addr].t = 'n';
-    } else if (extraCostRow >= 0) {
-      // Clear extra costs from template
-      const addr = XLSX.utils.encode_cell({ r: extraCostRow, c: extraCostCol });
-      if (newSheet[addr]) { newSheet[addr].v = null; newSheet[addr].t = 's'; }
+      setCell(extraCostRow, extraCostCol, totalExtra, 'n');
     }
 
-    // Add new sheet to workbook
+    // Add new sheet and export
     workbook.SheetNames.push(newSheetName);
     workbook.Sheets[newSheetName] = newSheet;
 
-    // Export
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
@@ -1093,7 +1395,7 @@ async function generateExcel() {
     a.click();
     URL.revokeObjectURL(url);
 
-    showStatus(`✓ ${newSheetName} fül sikeresen létrehozva és letöltve!`, 'info');
+    showStatus(`✓ ${newSheetName} fül létrehozva! (Sablon: ${tmpl.type})`, 'info');
     btn.textContent = '✓ Letöltve!';
     setTimeout(() => {
       btn.disabled = false;
